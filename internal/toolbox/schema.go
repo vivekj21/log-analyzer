@@ -28,10 +28,12 @@ type ParameterDef struct {
 }
 
 type ToolDefinition struct {
-	Name           string
-	Description    string
-	Parameters     []ParameterDef
-	CommandBuilder func(params map[string]string) (binary string, args []string, err error)
+	Name                  string
+	Description           string
+	Parameters            []ParameterDef
+	IsReadOnly            bool
+	RequiresHumanApproval bool
+	CommandBuilder        func(params map[string]string) (binary string, args []string, err error)
 }
 
 var (
@@ -42,6 +44,23 @@ var (
 	selectorPattern      = regexp.MustCompile(`^[a-zA-Z0-9._\-/]+(=[a-zA-Z0-9._\-]+)?(,[a-zA-Z0-9._\-/]+(=[a-zA-Z0-9._\-]+)?)*$`)
 	tailLinesPattern     = regexp.MustCompile(`^[0-9]{1,5}$`)
 )
+
+// Blocked system and security namespaces to prevent indirect prompt injection extraction
+var blockedNamespaces = map[string]bool{
+	"kube-system":     true,
+	"kube-public":     true,
+	"kube-node-lease": true,
+	"vault":           true,
+	"cert-manager":    true,
+	"istio-system":    true,
+	"metallb-system":  true,
+}
+
+// Sensitive keywords blocked from configmap retrieval to prevent credential leakage
+var sensitiveConfigKeywords = []string{
+	"secret", "token", "password", "passwd", "credential",
+	"auth", "key", "cert", "tls", "private", "id_rsa", "keystore",
+}
 
 var dangerousSubstrings = []string{
 	";", "|", "&", "`",
