@@ -25,9 +25,10 @@ func main() {
 		since     = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
 		modelName = flag.String("model", "gemini-2.5-pro", "Gemini model to use for long-context log reasoning")
 		dryRun    = flag.Bool("dry-run", false, "Execute kubectl in dry-run mode (logs commands instead of invoking cluster)")
-		timeout   = flag.Duration("timeout", 10*time.Minute, "Overall investigation timeout")
-		enableGit = flag.Bool("git", true, "Stick diagnosed issues and post-mortems into Git")
-		gitRepo   = flag.String("git-repo", ".", "Path to local Git repository root")
+		timeout      = flag.Duration("timeout", 10*time.Minute, "Overall investigation timeout")
+		enableGit    = flag.Bool("git", true, "Stick diagnosed issues and post-mortems into Git")
+		gitRepo      = flag.String("git-repo", ".", "Path to local Git repository root")
+		createBranch = flag.Bool("branch", false, "Create a separate git branch for the incident (default false: commit to current branch)")
 	)
 	flag.Parse()
 
@@ -45,7 +46,7 @@ func main() {
 
 	// Mode 1: Direct Raw Log File Analysis & Git Persistence
 	if *logFile != "" {
-		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, apiKey, *modelName)
+		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, apiKey, *modelName)
 		return
 	}
 
@@ -130,7 +131,7 @@ func main() {
 	}
 }
 
-func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit bool, apiKey, modelName string) {
+func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, apiKey, modelName string) {
 	log.Printf("[LogReader] Reading log file: %s", filePath)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -180,6 +181,7 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 		log.Printf("[GitAgent] Sticking diagnosed issue into Git repository at %s...", repoDir)
 		gitConfig := agent.DefaultGitAgentConfig()
 		gitConfig.RepoDir = repoDir
+		gitConfig.CreateBranch = createBranch
 		gitAgent := agent.NewGitAgent(nil, gitConfig)
 
 		req := protocol.GitPersistRequestPayload{
@@ -192,7 +194,7 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 			ReportMarkdown:  reportMarkdown,
 			RawLogs:         rawLogs,
 			RepoDir:         repoDir,
-			CreateBranch:    true,
+			CreateBranch:    createBranch,
 		}
 
 		res, err := gitAgent.PersistIssue(ctx, req)
