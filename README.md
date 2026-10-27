@@ -1,6 +1,6 @@
 # Autonomous Multi-Agent Kubernetes & Log Root-Cause Deductor in Go
 
-An enterprise-grade, autonomous multi-agent log analysis, root-cause deduction, and GitOps incident tracking system written in Go.
+An autonomous multi-agent log analysis, root-cause deduction, and GitOps incident tracking system written in Go.
 
 ---
 
