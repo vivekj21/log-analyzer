@@ -1,0 +1,8 @@
+2026-10-27T08:20:00.010Z [WARN] [security-filter] Suspicious authentication surge from IP 198.51.100.44
+2026-10-27T08:20:01.120Z [WARN] [jwt-validator] TokenSignatureInvalidException: HMAC-SHA256 signature mismatch on token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+2026-10-27T08:20:01.230Z [WARN] [auth-controller] Authentication failed for username 'admin': invalid credentials [HTTP 401 Unauthorized]
+2026-10-27T08:20:01.340Z [WARN] [auth-controller] Authentication failed for username 'root': invalid credentials [HTTP 401 Unauthorized]
+2026-10-27T08:20:01.450Z [WARN] [auth-controller] Authentication failed for username 'administrator': invalid credentials [HTTP 401 Unauthorized]
+2026-10-27T08:20:01.560Z [WARN] [auth-controller] Authentication failed for username 'service_account': invalid credentials [HTTP 401 Unauthorized]
+2026-10-27T08:20:02.010Z [ERROR] [rate-limiter] Rate limit exceeded for client IP 198.51.100.44: 150 failed attempts in 2 seconds [HTTP 429 Too Many Requests]
+2026-10-27T08:20:02.020Z [SECURITY] [firewall] Block rule activated for IP 198.51.100.44: Dropping incoming packets

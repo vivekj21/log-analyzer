@@ -148,3 +148,42 @@ func TestGitAgent_PersistIssueToRepo(t *testing.T) {
 		t.Fatalf("git log does not contain commit message: %s", string(out))
 	}
 }
+
+func TestAllTestdataScenarios(t *testing.T) {
+	testCases := []struct {
+		fileName         string
+		expectedSeverity string
+		expectedKeyword  string
+	}{
+		{"01-jvm-heap-oom-crash.log", "P0", "OOM"},
+		{"02-go-panic-nil-pointer.log", "P0", "Panic"},
+		{"03-k8s-crashloop-probe-failure.log", "P1", "CrashLoop"},
+		{"04-database-deadlock-connection-pool.log", "P1", "Deadlock"},
+		{"05-microservice-cascade-504-timeout.log", "P2", "Timeout"},
+		{"06-tls-certificate-expiry.log", "P1", "TLS"},
+		{"07-disk-pressure-read-only-fs.log", "P0", "Disk"},
+		{"08-auth-security-bruteforce-jwt-tampering.log", "P1", "Security"},
+		{"09-python-fastapi-unhandled-traceback.log", "P0", "Panic"},
+		{"10-healthy-production-baseline.log", "P3", "Healthy"},
+	}
+
+	testdataDir := filepath.Join("..", "..", "testdata", "logs")
+
+	for _, tc := range testCases {
+		t.Run(tc.fileName, func(t *testing.T) {
+			path := filepath.Join(testdataDir, tc.fileName)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("failed to read test file %s: %v", path, err)
+			}
+
+			issue := AnalyzeRawLogs(string(data))
+			if issue.Severity != tc.expectedSeverity {
+				t.Errorf("%s: expected severity %s, got %s", tc.fileName, tc.expectedSeverity, issue.Severity)
+			}
+			if !strings.Contains(issue.Title, tc.expectedKeyword) && !strings.Contains(issue.Summary, tc.expectedKeyword) {
+				t.Errorf("%s: expected keyword %s in title (%s) or summary (%s)", tc.fileName, tc.expectedKeyword, issue.Title, issue.Summary)
+			}
+		})
+	}
+}

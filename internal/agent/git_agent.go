@@ -141,6 +141,9 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 		oomFound    bool
 		panicFound  bool
 		crashFound  bool
+		tlsFound    bool
+		diskFound   bool
+		secFound    bool
 		timeoutCnt  int
 		http5xxCnt  int
 		deadlockCnt int
@@ -153,6 +156,9 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 	timeoutRegex := regexp.MustCompile(`(?i)(timeout|timed out|context deadline exceeded|i/o timeout|connection reset|broken pipe)`)
 	http5xxRegex := regexp.MustCompile(`(?i)(HTTP/?[12]?(\.[0-9])?["\s]+50[0-4]|502 Bad Gateway|504 Gateway Timeout|500 Internal Server Error)`)
 	deadlockRegex := regexp.MustCompile(`(?i)(deadlock detected|lock wait timeout|database locked)`)
+	tlsRegex := regexp.MustCompile(`(?i)(x509: certificate has expired|tls: bad certificate|certificate verify failed|authentication handshake failed)`)
+	diskRegex := regexp.MustCompile(`(?i)(ENOSPC|no space left on device|Read-only file system|DiskPressure)`)
+	secRegex := regexp.MustCompile(`(?i)(TokenSignatureInvalidException|Rate limit exceeded|credential stuffing|invalid credentials.*401)`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -177,6 +183,27 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 				sampleLines = append(sampleLines, line)
 			}
 			signatures = appendSignature(signatures, "Container Crash / CrashLoopBackOff")
+		}
+		if diskRegex.MatchString(line) {
+			diskFound = true
+			if len(sampleLines) < 10 {
+				sampleLines = append(sampleLines, line)
+			}
+			signatures = appendSignature(signatures, "Disk Saturation / Read-Only Filesystem")
+		}
+		if tlsRegex.MatchString(line) {
+			tlsFound = true
+			if len(sampleLines) < 10 {
+				sampleLines = append(sampleLines, line)
+			}
+			signatures = appendSignature(signatures, "TLS Certificate Expiration / Handshake Rejection")
+		}
+		if secRegex.MatchString(line) {
+			secFound = true
+			if len(sampleLines) < 10 {
+				sampleLines = append(sampleLines, line)
+			}
+			signatures = appendSignature(signatures, "Security Anomaly: Auth Surge / Signature Tampering")
 		}
 		if timeoutRegex.MatchString(line) {
 			timeoutCnt++
@@ -213,6 +240,16 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 	}
 
 	switch {
+	case diskFound:
+		issue.Severity = "P0"
+		issue.Title = "Disk Space Saturation & Read-Only Filesystem"
+		issue.Summary = "Volume has run out of storage space (ENOSPC), causing filesystem remount as read-only or pod eviction."
+		issue.RootCause = "Disk storage or inode exhaustion on host or persistent volume mount."
+		issue.Recommendations = []string{
+			"Inspect disk utilization using 'df -h' and 'du -sh /data/*'.",
+			"Rotate and purge uncompressed logs or old WAL segments.",
+			"Expand persistent volume claim (PVC) capacity in storage spec.",
+		}
 	case panicFound:
 		issue.Severity = "P0"
 		issue.Title = "Critical Application Panic & Crash"
@@ -232,6 +269,26 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 			"Increase Kubernetes memory request/limit in pod deployment specification.",
 			"Check for memory leaks or unbounded in-memory caching in the target service.",
 			"Configure runtime heap flags (e.g. -XX:MaxRAMPercentage for Java).",
+		}
+	case tlsFound:
+		issue.Severity = "P1"
+		issue.Title = "TLS Certificate Expiration & Handshake Failure"
+		issue.Summary = "Inter-service or gateway HTTPS/mTLS connections are rejected due to expired x509 certificates."
+		issue.RootCause = "x509 certificate expired past validity timestamp or CA cert trust store mismatch."
+		issue.Recommendations = []string{
+			"Renew the expired TLS/mTLS certificate in cert-manager or secrets vault.",
+			"Verify certificate validity dates with 'openssl x509 -in tls.crt -noout -dates'.",
+			"Restart pods to pick up renewed TLS secrets if certificates are not auto-reloaded.",
+		}
+	case secFound:
+		issue.Severity = "P1"
+		issue.Title = "Security Anomaly: Auth Surge & Token Tampering"
+		issue.Summary = "High volume of unauthorized 401s, invalid signature tokens, or rate limit threshold violations detected."
+		issue.RootCause = "Credential stuffing attack, brute force attempt, or client using compromised/invalid signing key."
+		issue.Recommendations = []string{
+			"Verify WAF / ingress rate-limiting rules on offending IP ranges.",
+			"Rotate application JWT secret keys if key compromise is suspected.",
+			"Enforce multi-factor authentication (MFA) and account lockout policies.",
 		}
 	case crashFound:
 		issue.Severity = "P1"
@@ -264,12 +321,12 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 		}
 	default:
 		issue.Severity = "P3"
-		issue.Title = "Log Anomaly / Warning Stream Detected"
-		issue.Summary = "Unusual error or warning frequency identified in application log stream."
-		issue.RootCause = "Intermittent or non-fatal errors occurring during workload execution."
+		issue.Title = "Healthy Workload: No Critical Incident Detected"
+		issue.Summary = "Routine operational traffic observed; no fatal or critical errors found."
+		issue.RootCause = "All monitored service transactions completed without unhandled exceptions or critical thresholds exceeded."
 		issue.Recommendations = []string{
-			"Monitor application metrics for progressive degradation.",
-			"Review service health checks.",
+			"Continue routine operational monitoring.",
+			"No immediate remediation required.",
 		}
 	}
 

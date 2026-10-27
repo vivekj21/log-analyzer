@@ -1,0 +1,25 @@
+2026-10-27T07:30:00.001Z {"level":"info","ts":"2026-10-27T07:30:00.001Z","logger":"order-service","msg":"Server listening on 0.0.0.0:8080"}
+2026-10-27T07:30:05.120Z {"level":"info","ts":"2026-10-27T07:30:05.120Z","logger":"order-service","msg":"Received CreateOrder request","order_id":"ord-5001"}
+2026-10-27T07:30:05.210Z {"level":"info","ts":"2026-10-27T07:30:05.210Z","logger":"order-service","msg":"Order created successfully","order_id":"ord-5001"}
+2026-10-27T07:31:12.890Z {"level":"info","ts":"2026-10-27T07:31:12.890Z","logger":"order-service","msg":"Received CreateOrder request with nil user session","order_id":"ord-5002"}
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x18 pc=0x83e2a1]
+
+goroutine 64 [running]:
+github.com/example/order-service/pkg/service.(*OrderService).ApplyDiscount(0xc000192e40, 0xc000210a00, 0x0)
+	/workspace/pkg/service/discount.go:54 +0x41
+github.com/example/order-service/pkg/service.(*OrderService).CreateOrder(0xc000192e40, {0x91a0c0, 0xc0002049c0}, 0xc000210a00)
+	/workspace/pkg/service/order.go:112 +0x24a
+github.com/example/order-service/pkg/api/v1.(*Handler).CreateOrderHandler(0xc000192ea0, {0x91a0c0, 0xc0002049c0}, 0xc000204a80)
+	/workspace/pkg/api/v1/handlers.go:88 +0x17c
+net/http.HandlerFunc.ServeHTTP(0xc0001e0120, {0x91b340, 0xc0002220e0}, 0xc000204a80)
+	/usr/local/go/src/net/http/server.go:2136 +0x29
+github.com/gorilla/mux.(*Router).ServeHTTP(0xc0001c2300, {0x91b340, 0xc0002220e0}, 0xc000204a80)
+	/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go:212 +0x1cf
+net/http.serverHandler.ServeHTTP({0xc0001be000}, {0x91b340, 0xc0002220e0}, 0xc000204a80)
+	/usr/local/go/src/net/http/server.go:2938 +0x8e
+net/http.(*conn).serve(0xc0002181b0, {0x91b7e0, 0xc000194840})
+	/usr/local/go/src/net/http/server.go:2009 +0x5f8
+created by net/http.(*Server).Serve in goroutine 1
+	/usr/local/go/src/net/http/server.go:3086 +0x5d4
+2026-10-27T07:31:13.002Z kubelet: Container order-service terminated with exit code 2

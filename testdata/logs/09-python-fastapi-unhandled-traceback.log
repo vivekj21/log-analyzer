@@ -1,0 +1,14 @@
+2026-10-27T08:25:01.100Z [INFO] uvicorn.access: 10.244.0.12:45920 - "GET /health" 200 OK
+2026-10-27T08:25:10.240Z [INFO] app.routers.invoicing: Received payload for invoice generation id=inv_7719
+2026-10-27T08:25:10.245Z [ERROR] app.main: Exception occurred during request processing
+Traceback (most recent call last):
+  File "/app/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 162, in __call__
+    await self.app(scope, receive, _send)
+  File "/app/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 79, in __call__
+    await self.app(scope, receive, sender)
+  File "/app/routers/invoicing.py", line 94, in generate_invoice
+    billing_address = customer_profile["billing_address"]
+KeyError: 'billing_address'
+2026-10-27T08:25:10.250Z [ERROR] uvicorn.access: 10.244.0.12:45920 - "POST /api/v1/invoices" 500 Internal Server Error
+2026-10-27T08:25:11.002Z [ERROR] celery.worker.job: Task app.tasks.sync_ledger[b4e87d] raised unexpected: KeyError('billing_address')
+2026-10-27T08:25:11.005Z [FATAL] celery.worker.job: Max retries exceeded (3/3) for task b4e87d

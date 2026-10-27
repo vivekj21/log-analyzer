@@ -1,0 +1,26 @@
+2026-10-27T07:15:01.120Z [INFO] [main] org.springframework.boot.Startup - Starting PaymentServiceApplication v2.4.1 using Java 21 on payment-service-789bf8d47b-8xkm9
+2026-10-27T07:15:03.450Z [INFO] [main] org.apache.catalina.core.StandardService - Starting service [Tomcat]
+2026-10-27T07:15:03.882Z [INFO] [main] o.s.b.w.embedded.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path ''
+2026-10-27T07:15:04.101Z [INFO] [main] c.e.payment.PaymentServiceApplication - Started PaymentServiceApplication in 3.12 seconds (JVM running for 3.89)
+2026-10-27T07:20:10.005Z [INFO] [http-nio-8080-exec-1] c.e.payment.controller.CheckoutController - Processing checkout request order_id=ORD-98214 customer_id=CUST-10492
+2026-10-27T07:20:12.331Z [INFO] [http-nio-8080-exec-2] c.e.payment.controller.CheckoutController - Processing checkout request order_id=ORD-98215 customer_id=CUST-10493
+2026-10-27T07:22:45.912Z [WARN] [http-nio-8080-exec-12] c.e.payment.service.BatchReconciliation - Ingesting heavy batch payload size=480MB records=1500000
+2026-10-27T07:23:01.014Z [WARN] [G1-Young-GC] org.openjdk.jvm.gc - G1 Evacuation Pause (young) duration=1420ms heap_used=1890MB heap_max=2048MB
+2026-10-27T07:23:15.520Z [WARN] [G1-Old-GC] org.openjdk.jvm.gc - G1 Full GC cycle triggered; pause=4890ms reclaimed=12MB
+2026-10-27T07:23:18.109Z [ERROR] [http-nio-8080-exec-14] o.a.c.c.C.[.[.[/].[dispatcherServlet] - Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception
+java.lang.OutOfMemoryError: Java heap space
+	at java.base/java.util.Arrays.copyOf(Arrays.java:3537)
+	at java.base/java.io.ByteArrayOutputStream.grow(ByteArrayOutputStream.java:120)
+	at java.base/java.io.ByteArrayOutputStream.ensureCapacity(ByteArrayOutputStream.java:95)
+	at java.base/java.io.ByteArrayOutputStream.write(ByteArrayOutputStream.java:155)
+	at com.fasterxml.jackson.core.util.ByteArrayBuilder.write(ByteArrayBuilder.java:185)
+	at com.fasterxml.jackson.databind.ObjectMapper.writeValueAsBytes(ObjectMapper.java:3865)
+	at com.example.payment.service.BatchReconciliation.process(BatchReconciliation.java:84)
+	at com.example.payment.controller.ReconciliationController.handleBatch(ReconciliationController.java:49)
+2026-10-27T07:23:19.450Z [FATAL] [http-nio-8080-exec-15] c.e.payment.monitoring.HealthWatchdog - Memory exhaustion detected. JVM Heap utilization 99.4%
+2026-10-27T07:23:20.101Z [ERROR] [http-nio-8080-exec-16] c.e.payment.controller.CheckoutController - HTTP 500 Internal Server Error: OutOfMemoryError
+2026-10-27T07:23:21.050Z kernel: [89421.140291] oom-killer: gfp_mask=0x1100cca(GFP_HIGHUSER_MOVABLE), order=0
+2026-10-27T07:23:21.050Z kernel: [89421.140295] Memory cgroup out of memory: Killed process 412 (java) total-vm:4194304kB, anon-rss:2097152kB, file-rss:0kB, shmem-rss:0kB
+2026-10-27T07:23:21.052Z kernel: [89421.140301] Memory cgroup stats for /kubepods/burstable/podpayment-service-789bf8d47b-8xkm9: memory.max=2147483648, memory.current=2147483648
+2026-10-27T07:23:21.200Z systemd[1]: payment-service.service: Main process exited, code=killed, status=9/KILL
+2026-10-27T07:23:21.201Z kubelet: Container payment-service in pod payment-service-789bf8d47b-8xkm9 terminated with exit code 137 (OOMKilled)

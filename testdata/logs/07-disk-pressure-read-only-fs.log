@@ -1,0 +1,9 @@
+2026-10-27T08:15:00.001Z [INFO] wal-writer-0: Processing ingested metric batch [batch_seq=9921]
+2026-10-27T08:15:02.140Z [WARN] wal-writer-0: Disk volume /data/wal reaching 98.9% capacity
+2026-10-27T08:15:03.450Z [ERROR] wal-writer-0: write /data/wal/00000001000000A2: ENOSPC: no space left on device
+2026-10-27T08:15:04.110Z kernel: [99120.450123] EXT4-fs error (device sdc1): ext4_lookup: deleted inode referenced: 1441801
+2026-10-27T08:15:04.111Z kernel: [99120.450129] Aborting journal on device sdc1-8.
+2026-10-27T08:15:04.112Z kernel: [99120.450135] EXT4-fs (sdc1): Remounting filesystem read-only
+2026-10-27T08:15:05.002Z [FATAL] wal-writer-0: Failed to persist record: open /data/wal/00000001000000A3: Read-only file system
+2026-10-27T08:15:05.100Z kubelet: Eviction manager: node node-storage-pool-1 has DiskPressure condition
+2026-10-27T08:15:05.200Z kubelet: Pod wal-writer-0 marked for termination: Evicted (DiskPressure)

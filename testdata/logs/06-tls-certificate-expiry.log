@@ -1,0 +1,9 @@
+2026-10-27T08:10:00.010Z [INFO] auth-gateway: TLS listener initialized with certificate chain /etc/ssl/certs/tls.crt
+2026-10-27T08:10:02.120Z [INFO] auth-gateway: Establishing secure mutual TLS link to user-identity-vault:8443
+2026-10-27T08:10:05.450Z [ERROR] auth-gateway: Transport: authentication handshake failed: x509: certificate has expired or is not yet valid: current time 2026-10-27T08:10:05Z is after 2026-10-26T23:59:59Z
+2026-10-27T08:10:06.100Z [ERROR] auth-gateway: rpc error: code = Unavailable desc = connection error: desc = "transport: authentication handshake failed: remote error: tls: bad certificate"
+2026-10-27T08:10:07.210Z [ERROR] auth-gateway: Failed to verify identity token for request req_90123: x509: certificate has expired or is not yet valid
+2026-10-27T08:10:08.330Z [WARN] auth-gateway: Retrying TLS handshake to user-identity-vault:8443 (attempt 2/5)
+2026-10-27T08:10:09.110Z [ERROR] auth-gateway: Transport: authentication handshake failed: x509: certificate has expired or is not yet valid
+2026-10-27T08:10:10.001Z [FATAL] auth-gateway: Security policy enforcement failed: all mTLS handshakes rejected by cluster PKI
+2026-10-27T08:10:10.100Z kubelet: Container auth-gateway terminated with exit code 1
