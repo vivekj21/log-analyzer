@@ -137,16 +137,18 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 
 	var (
 		signatures  []string
-		sampleLines []string
-		oomFound    bool
-		panicFound  bool
-		crashFound  bool
-		tlsFound    bool
-		diskFound   bool
-		secFound    bool
-		timeoutCnt  int
-		http5xxCnt  int
-		deadlockCnt int
+		sampleLines  []string
+		oomFound     bool
+		panicFound   bool
+		crashFound   bool
+		tlsFound     bool
+		diskFound    bool
+		secFound     bool
+		clusterFound bool
+		cloudFound   bool
+		timeoutCnt   int
+		http5xxCnt   int
+		deadlockCnt  int
 	)
 
 	// Regex patterns for common critical issues
@@ -158,7 +160,9 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 	deadlockRegex := regexp.MustCompile(`(?i)(deadlock detected|lock wait timeout|database locked)`)
 	tlsRegex := regexp.MustCompile(`(?i)(x509: certificate has expired|tls: bad certificate|certificate verify failed|authentication handshake failed)`)
 	diskRegex := regexp.MustCompile(`(?i)(ENOSPC|no space left on device|Read-only file system|DiskPressure)`)
-	secRegex := regexp.MustCompile(`(?i)(TokenSignatureInvalidException|Rate limit exceeded|credential stuffing|invalid credentials.*401)`)
+	secRegex := regexp.MustCompile(`(?i)(authentication failure|check pass; user unknown|Failed password for|POSSIBLE BREAK-IN ATTEMPT|TokenSignatureInvalidException|Rate limit exceeded|credential stuffing|invalid credentials.*401)`)
+	clusterRegex := regexp.MustCompile(`(?i)(Connection broken for id|QuorumCnxManager|Send worker leaving thread|no quorum|split brain|leader election lost|Failed to connect to master)`)
+	cloudRegex := regexp.MustCompile(`(?i)(HTTP exception thrown: No instances found|Unknown base file|nova.virt.libvirt.imagecache)`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -203,7 +207,21 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 			if len(sampleLines) < 10 {
 				sampleLines = append(sampleLines, line)
 			}
-			signatures = appendSignature(signatures, "Security Anomaly: Auth Surge / Signature Tampering")
+			signatures = appendSignature(signatures, "Security Anomaly: Auth Surge / Intrusion Attempt")
+		}
+		if clusterRegex.MatchString(line) {
+			clusterFound = true
+			if len(sampleLines) < 10 {
+				sampleLines = append(sampleLines, line)
+			}
+			signatures = appendSignature(signatures, "Distributed Consensus / Cluster Partition Warning")
+		}
+		if cloudRegex.MatchString(line) {
+			cloudFound = true
+			if len(sampleLines) < 10 {
+				sampleLines = append(sampleLines, line)
+			}
+			signatures = appendSignature(signatures, "Cloud Hypervisor / Image Cache Discrepancy")
 		}
 		if timeoutRegex.MatchString(line) {
 			timeoutCnt++
@@ -282,13 +300,32 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 		}
 	case secFound:
 		issue.Severity = "P1"
-		issue.Title = "Security Anomaly: Auth Surge & Token Tampering"
-		issue.Summary = "High volume of unauthorized 401s, invalid signature tokens, or rate limit threshold violations detected."
-		issue.RootCause = "Credential stuffing attack, brute force attempt, or client using compromised/invalid signing key."
+		issue.Title = "Security Anomaly: Auth Surge & Intrusion Attempts"
+		issue.Summary = "High volume of unauthorized 401s, SSH authentication failures, PAM errors, or break-in attempts detected."
+		issue.RootCause = "Brute force credential stuffing attack, automated SSH scanning, or invalid authentication signatures."
 		issue.Recommendations = []string{
-			"Verify WAF / ingress rate-limiting rules on offending IP ranges.",
-			"Rotate application JWT secret keys if key compromise is suspected.",
-			"Enforce multi-factor authentication (MFA) and account lockout policies.",
+			"Inspect offending remote hosts and enable fail2ban or firewall blocklists.",
+			"Disable root SSH password login and enforce SSH key-based authentication.",
+			"Rotate application JWT secret keys and credentials if compromise is suspected.",
+		}
+	case clusterFound:
+		issue.Severity = "P1"
+		issue.Title = "Distributed Consensus & Cluster Connection Drops"
+		issue.Summary = "ZooKeeper / Spark / etcd peer communication failures or send/receive worker thread drops detected."
+		issue.RootCause = "Inter-node network partition, excessive GC pause causing heartbeat timeout, or quorum communication drops."
+		issue.Recommendations = []string{
+			"Verify network connectivity, firewalls, and MTU between cluster member nodes.",
+			"Check JVM heap and GC pause times on cluster leader and follower instances.",
+			"Inspect cluster quorum state and leader election health.",
+		}
+	case cloudFound:
+		issue.Severity = "P2"
+		issue.Title = "Cloud Infrastructure & Image Cache Discrepancy"
+		issue.Summary = "Hypervisor / compute daemon warning: unknown base image cache or unmapped VM instances."
+		issue.RootCause = "Libvirt/Nova image cache cleaner discrepancy or orphaned base disk image on compute node."
+		issue.Recommendations = []string{
+			"Verify image cache consistency on target hypervisor compute nodes.",
+			"Check OpenStack glance image status and compute node disk space.",
 		}
 	case crashFound:
 		issue.Severity = "P1"

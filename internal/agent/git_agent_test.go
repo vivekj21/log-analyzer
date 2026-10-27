@@ -187,3 +187,39 @@ func TestAllTestdataScenarios(t *testing.T) {
 		})
 	}
 }
+
+func TestRealProductionLogs(t *testing.T) {
+	testCases := []struct {
+		fileName         string
+		expectedSeverity string
+		expectedKeyword  string
+	}{
+		{"prod-k8s-payment-service-oom-storm.log", "P0", "OOM"},
+		{"prod-k8s-ecommerce-panic-under-load.log", "P0", "Panic"},
+		{"prod-k8s-envoy-gateway-cascade-504.log", "P2", "Timeout"},
+		{"real-linux-syslog.log", "P1", "Security"},
+		{"real-openssh-auth.log", "P1", "Security"},
+		{"real-zookeeper.log", "P1", "Consensus"},
+		{"real-openstack.log", "P2", "Cloud"},
+	}
+
+	prodDir := filepath.Join("..", "..", "testdata", "production_logs")
+
+	for _, tc := range testCases {
+		t.Run(tc.fileName, func(t *testing.T) {
+			path := filepath.Join(prodDir, tc.fileName)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("failed to read production log %s: %v", path, err)
+			}
+
+			issue := AnalyzeRawLogs(string(data))
+			if issue.Severity != tc.expectedSeverity {
+				t.Errorf("%s: expected severity %s, got %s", tc.fileName, tc.expectedSeverity, issue.Severity)
+			}
+			if !strings.Contains(issue.Title, tc.expectedKeyword) && !strings.Contains(issue.Summary, tc.expectedKeyword) {
+				t.Errorf("%s: expected keyword %s in title (%s) or summary (%s)", tc.fileName, tc.expectedKeyword, issue.Title, issue.Summary)
+			}
+		})
+	}
+}
