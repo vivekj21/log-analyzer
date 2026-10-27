@@ -1,9 +1,9 @@
 ---
-id: "4d83c5a6a7ef8694"
+id: "f97aa595e30d9107"
 title: "Kubernetes Pod CrashLoopBackOff"
 severity: "P1"
 status: "OPEN"
-timestamp: "2026-10-27T02:57:00Z"
+timestamp: "2026-10-27T03:34:41Z"
 namespace: ""
 signatures:
   - "Container Crash / CrashLoopBackOff"
@@ -11,9 +11,9 @@ signatures:
 
 # Incident Postmortem: Kubernetes Pod CrashLoopBackOff
 
-- **Incident ID:** `4d83c5a6a7ef8694`
+- **Incident ID:** `f97aa595e30d9107`
 - **Severity:** `P1`
-- **Reported At:** 2026-10-27 02:57:00 UTC
+- **Reported At:** 2026-10-27 03:34:41 UTC
 
 ---
 
@@ -21,7 +21,7 @@ signatures:
 
 > **Root Cause:** Failing startup probe, missing environment variables, or rapid unhandled exit.
 
-**Initial Symptom:** Discovered in log file testdata/logs/03-k8s-crashloop-probe-failure.log
+**Initial Symptom:** Discovered in log file /home/vj/code/log_analyzer/testdata/logs/03-k8s-crashloop-probe-failure.log
 
 ### Detected Failure Signatures
 
