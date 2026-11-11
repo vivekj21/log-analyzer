@@ -24,6 +24,9 @@ func main() {
 		symptom   = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
 		since     = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
 		modelName = flag.String("model", "gemini-2.5-pro", "Gemini model to use for long-context log reasoning")
+		llmMode   = flag.String("llm", "live", "LLM execution mode: live, record, replay, heuristic")
+		recordDir = flag.String("recordings-dir", "recordings", "Directory to store/read LLM recordings")
+		caseID    = flag.String("case-id", "", "Case ID for recordings/replay naming (defaults to generated ID)")
 		dryRun    = flag.Bool("dry-run", false, "Execute kubectl in dry-run mode (logs commands instead of invoking cluster)")
 		timeout      = flag.Duration("timeout", 10*time.Minute, "Overall investigation timeout")
 		enableGit    = flag.Bool("git", true, "Stick diagnosed issues and post-mortems into Git")
@@ -51,8 +54,9 @@ func main() {
 	}
 
 	// Mode 2: Multi-Agent Kubernetes Cluster Investigation & Git Persistence
-	if apiKey == "" {
-		log.Fatalf("GEMINI_API_KEY environment variable is not set. Please export GEMINI_API_KEY to run the autonomous cluster analyzer, or use --log-file to analyze a log file directly.")
+	needsAPIKey := *llmMode == "live" || *llmMode == "record"
+	if needsAPIKey && apiKey == "" {
+		log.Fatalf("GEMINI_API_KEY environment variable is not set. Required for --llm=%s. Set GEMINI_API_KEY, use --llm=heuristic, or use --llm=replay.", *llmMode)
 	}
 
 	log.Printf("Target Namespace : %s", *namespace)
@@ -61,7 +65,11 @@ func main() {
 	}
 	log.Printf("Symptom          : %s", *symptom)
 	log.Printf("Time Window      : %s", *since)
-	log.Printf("Gemini Model     : %s", *modelName)
+	log.Printf("LLM Engine / Mode: %s", *llmMode)
+	if *llmMode != "heuristic" {
+		log.Printf("Gemini Model     : %s", *modelName)
+		log.Printf("Recordings Dir   : %s", *recordDir)
+	}
 	log.Printf("Dry-Run Mode     : %v", *dryRun)
 	log.Printf("Git Persistence  : %v (repo: %s)", *enableGit, *gitRepo)
 	log.Println("================================================================================")
@@ -76,12 +84,34 @@ func main() {
 	// 3. Agent Communication Bus
 	bus := protocol.NewAgentBus(100)
 
-	// 4. Gemini Long-Context LLM Client
-	geminiClient, err := llm.NewClient(ctx, apiKey, *modelName, toolRegistry)
-	if err != nil {
-		log.Fatalf("Failed to initialize Gemini reasoning client: %v", err)
+	// 4. Model Selection (live, record, replay, heuristic)
+	var model llm.Model
+	switch *llmMode {
+	case "heuristic":
+		model = llm.NewHeuristicModel()
+		log.Println("[Model] Initialized rule-based Heuristic analyzer")
+	case "replay":
+		model = llm.NewRecorder(llm.ModeReplay, *recordDir, nil)
+		log.Printf("[Model] Initialized Recorder in REPLAY mode (dir: %s)", *recordDir)
+	case "record":
+		geminiClient, err := llm.NewClient(ctx, apiKey, *modelName, toolRegistry)
+		if err != nil {
+			log.Fatalf("Failed to initialize Gemini reasoning client: %v", err)
+		}
+		defer geminiClient.Close()
+		model = llm.NewRecorder(llm.ModeRecord, *recordDir, geminiClient)
+		log.Printf("[Model] Initialized Recorder in RECORD mode (dir: %s)", *recordDir)
+	case "live":
+		geminiClient, err := llm.NewClient(ctx, apiKey, *modelName, toolRegistry)
+		if err != nil {
+			log.Fatalf("Failed to initialize Gemini reasoning client: %v", err)
+		}
+		defer geminiClient.Close()
+		model = geminiClient
+		log.Printf("[Model] Initialized live Gemini reasoning client (%s)", *modelName)
+	default:
+		log.Fatalf("Invalid --llm mode: %q. Must be one of: live, record, replay, heuristic", *llmMode)
 	}
-	defer geminiClient.Close()
 
 	// 5. Instantiate and Launch 4 Agents
 	reportChan := make(chan string, 1)
@@ -90,7 +120,7 @@ func main() {
 	producerAgent.SetGitPersistence(*enableGit, *gitRepo)
 
 	fetcherAgent := agent.NewFetcherAgent(bus, executor)
-	analyzerAgent := agent.NewAnalyzerAgent(bus, geminiClient)
+	analyzerAgent := agent.NewAnalyzerAgent(bus, model)
 
 	gitConfig := agent.DefaultGitAgentConfig()
 	gitConfig.RepoDir = *gitRepo
@@ -102,7 +132,10 @@ func main() {
 	go gitAgent.Run(ctx)
 
 	// 6. Dispatch Incident Investigation Request
-	investigationID := protocol.GenerateID()
+	investigationID := *caseID
+	if investigationID == "" {
+		investigationID = protocol.GenerateID()
+	}
 	log.Printf("[System] Launching investigation %s...", investigationID)
 
 	bus.ProducerCh <- protocol.NewMessage(

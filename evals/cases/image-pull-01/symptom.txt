@@ -1,0 +1,1 @@
+orders-service deployment has 0 ready replicas with pods stuck in ImagePullBackOff.

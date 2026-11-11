@@ -1,0 +1,6 @@
+{
+  "category": "DB_LOCK",
+  "must_mention": [
+    "lock"
+  ]
+}

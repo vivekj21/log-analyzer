@@ -1,0 +1,12 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "pod_name": "auth-service-79888ff4bc-k8m9v"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 850
+}

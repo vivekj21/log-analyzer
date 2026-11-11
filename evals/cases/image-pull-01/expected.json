@@ -1,0 +1,6 @@
+{
+  "category": "IMAGE_PULL_FAIL",
+  "must_mention": [
+    "image"
+  ]
+}

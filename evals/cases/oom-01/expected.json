@@ -1,0 +1,6 @@
+{
+  "category": "OOM_KILLED",
+  "must_mention": [
+    "memory limit"
+  ]
+}

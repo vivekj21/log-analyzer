@@ -1,0 +1,1 @@
+auth-service failing to start after recent release, entering CrashLoopBackOff repeatedly.

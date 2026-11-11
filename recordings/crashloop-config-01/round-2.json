@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** The auth-service failed startup validation due to missing required configuration environment variable DATABASE_URL.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Log output: 'FATAL [AUTH-INIT] missing required configuration environment variable: DATABASE_URL'\n- Panic: 'configuration validation failed: DATABASE_URL must not be empty'\n\n**Recommendations:**\n1. Supply DATABASE_URL via Secret or ConfigMap in deployment manifest.\n\nROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG",
+  "total_tokens": 1420
+}

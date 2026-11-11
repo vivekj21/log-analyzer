@@ -1,0 +1,6 @@
+{
+  "list_pods": "NAME                                            READY   STATUS             RESTARTS   AGE\npayment-service-67b897856c-x7zlm                0/1     CrashLoopBackOff   4          12m",
+  "get_events": "12m         Warning   BackOff     pod/payment-service-67b897856c-x7zlm   Back-off restarting failed container\n11m         Warning   OOMKilled   pod/payment-service-67b897856c-x7zlm   Memory limit exceeded: Container payment-service exceeded memory limit (512Mi)",
+  "describe_pod": "Name:         payment-service-67b897856c-x7zlm\nNamespace:    default\nStatus:       Running\nContainers:\n  payment-service:\n    State:          Terminated\n      Reason:       OOMKilled\n      Exit Code:    137\n    Limits:\n      memory:  512Mi\n    Requests:\n      memory:  256Mi",
+  "get_pod_logs": "2026-11-11T10:14:02Z INFO  [main] Starting payment transaction processor...\n2026-11-11T10:14:05Z ERROR [cache-worker] java.lang.OutOfMemoryError: Java heap space\n2026-11-11T10:14:05Z FATAL [main] Container memory limit exceeded, terminating process."
+}

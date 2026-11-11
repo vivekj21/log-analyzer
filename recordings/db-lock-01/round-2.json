@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** PostgreSQL database deadlock contention caused transaction pool exhaustion and HTTP 504 timeouts.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Log: 'ERROR: deadlock detected; Process 14032 waits for ExclusiveLock'\n- Log: 'connection pool exhausted: 64 queries waiting for database lock'\n\n**Recommendations:**\n1. Review locking order across concurrent billing transactions.\n2. Tune database lock timeout.\n\nROOT_CAUSE_CATEGORY: DB_LOCK",
+  "total_tokens": 1580
+}

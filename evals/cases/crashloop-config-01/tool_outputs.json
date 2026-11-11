@@ -1,0 +1,6 @@
+{
+  "list_pods": "NAME                                            READY   STATUS             RESTARTS   AGE\nauth-service-79888ff4bc-k8m9v                   0/1     CrashLoopBackOff   6          15m",
+  "get_events": "15m         Warning   BackOff     pod/auth-service-79888ff4bc-k8m9v      Back-off restarting failed container\n10m         Warning   Failed      pod/auth-service-79888ff4bc-k8m9v      Error: container failed to initialize",
+  "describe_pod": "Name:         auth-service-79888ff4bc-k8m9v\nNamespace:    default\nContainers:\n  auth-service:\n    State:          Terminated\n      Reason:       Error\n      Exit Code:    1",
+  "get_pod_logs": "2026-11-11T10:20:01Z [AUTH-INIT] Initializing authentication microservice v1.4.2...\n2026-11-11T10:20:01Z [AUTH-INIT] Validating environment configurations...\n2026-11-11T10:20:01Z FATAL [AUTH-INIT] missing required configuration environment variable: DATABASE_URL\npanic: configuration validation failed: DATABASE_URL must not be empty\ngoroutine 1 [running]:\nmain.main()\n\t/app/main.go:48 +0x3a5"
+}

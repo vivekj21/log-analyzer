@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** The image registry does not contain tag v2.4.1 for orders/service (manifest unknown), causing ImagePullBackOff.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Event: Failed to pull image registry.internal.net/orders/service:v2.4.1: tag does not exist: manifest unknown\n- Container waiting in ImagePullBackOff\n\n**Recommendations:**\n1. Verify image tag in deployment and CI/CD registry push.\n\nROOT_CAUSE_CATEGORY: IMAGE_PULL_FAIL",
+  "total_tokens": 1050
+}

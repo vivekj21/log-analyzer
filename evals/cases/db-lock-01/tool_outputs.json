@@ -1,0 +1,6 @@
+{
+  "list_pods": "NAME                                            READY   STATUS    RESTARTS   AGE\nbilling-service-6d4b5745dc-r7tn2                1/1     Running   0          2h",
+  "get_events": "2h          Normal    Scheduled   default-scheduler   Successfully assigned default/billing-service-6d4b5745dc-r7tn2 to node-01",
+  "describe_pod": "Name:         billing-service-6d4b5745dc-r7tn2\nNamespace:    default\nStatus:       Running\nContainers:\n  billing-service:\n    State:          Running\n      Started:      Wed, 11 Nov 2026 08:30:00 UTC\n    Ready:          True",
+  "get_pod_logs": "2026-11-11T10:30:12Z [pool-worker-4] ERROR org.postgresql.util.PSQLException: ERROR: deadlock detected\n  Detail: Process 14032 waits for ExclusiveLock on relation 16422 of database 16384; blocked by process 14015.\n  Process 14015 waits for ShareLock on relation 16430 of database 16384; blocked by process 14032.\n  Hint: See server log for query details.\n2026-11-11T10:30:15Z [http-nio-8080-exec-1] ERROR com.example.billing.TransactionManager - connection pool exhausted: 64 queries waiting for database lock, timed out after 30000ms"
+}

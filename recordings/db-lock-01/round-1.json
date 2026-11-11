@@ -1,0 +1,12 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "pod_name": "billing-service-6d4b5745dc-r7tn2"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 920
+}

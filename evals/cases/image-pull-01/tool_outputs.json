@@ -1,0 +1,6 @@
+{
+  "list_pods": "NAME                                            READY   STATUS             RESTARTS   AGE\norders-service-586b66b744-8d9j2                 0/1     ImagePullBackOff   0          8m",
+  "get_events": "8m          Warning   Failed      kubelet   Failed to pull image \"registry.internal.net/orders/service:v2.4.1\": rpc error: code = NotFound desc = failed to pull and unpack image: tag does not exist: manifest unknown\n8m          Warning   Failed      kubelet   Error: ImagePullBackOff\n6m          Normal    BackOff     kubelet   Back-off pulling image \"registry.internal.net/orders/service:v2.4.1\"",
+  "describe_pod": "Name:         orders-service-586b66b744-8d9j2\nNamespace:    default\nContainers:\n  orders-service:\n    State:          Waiting\n      Reason:       ImagePullBackOff\n    Image:          registry.internal.net/orders/service:v2.4.1",
+  "get_pod_logs": "Error from server (BadRequest): container \"orders-service\" in pod \"orders-service-586b66b744-8d9j2\" is waiting to start: trying and failing to pull image"
+}

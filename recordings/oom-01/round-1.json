@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** Container payment-service exceeded memory limit of 512Mi and was terminated by the Linux OOM killer with exit code 137.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- get_events shows 'OOMKilled pod/payment-service-67b897856c-x7zlm Memory limit exceeded: Container payment-service exceeded memory limit (512Mi)'\n- Exit code 137 in container state\n\n**Recommendations:**\n1. Increase container memory limit to 1Gi.\n2. Profile application memory heap for memory leak.\n\nROOT_CAUSE_CATEGORY: OOM_KILLED",
+  "total_tokens": 1280
+}

@@ -22,6 +22,11 @@ type ExecutionResult struct {
 	Error    string        `json:"error,omitempty"`
 }
 
+// ToolExecutor executes diagnostic tools against a cluster or canned source.
+type ToolExecutor interface {
+	Execute(ctx context.Context, toolName string, params map[string]string) (*ExecutionResult, error)
+}
+
 type SandboxedExecutor struct {
 	registry *ToolRegistry
 	timeout  time.Duration

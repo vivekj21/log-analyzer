@@ -39,6 +39,8 @@ const systemPrompt = `You are an expert Site Reliability Engineer (SRE) and Kube
 ## Response Format
 When you have reached your conclusion, provide a clear report:
 
+ROOT_CAUSE_CATEGORY: [One of: OOM_KILLED, CRASHLOOP_BAD_CONFIG, IMAGE_PULL_FAIL, READINESS_PROBE_FAIL, DB_LOCK, NO_FAULT]
+
 **Root Cause:** [Clear, specific description of what is causing the issue]
 
 **Confidence:** [HIGH / MEDIUM / LOW]
@@ -52,17 +54,20 @@ When you have reached your conclusion, provide a clear report:
 2. [Preventive measure for the future]
 3. [Additional recommendations...]
 
-Do NOT provide a conclusion until you have gathered sufficient evidence. Use the tools to investigate thoroughly first.`
+Do NOT provide a conclusion until you have gathered sufficient evidence. Use the tools to investigate thoroughly first.
+Always ensure the last or prominent line of your final conclusion includes:
+ROOT_CAUSE_CATEGORY: <CATEGORY>`
 
 type AnalysisResult struct {
-	FunctionCalls []FunctionCallRequest
-	HasToolCalls  bool
-	TextResponse  string
+	FunctionCalls []FunctionCallRequest `json:"function_calls,omitempty"`
+	HasToolCalls  bool                  `json:"has_tool_calls"`
+	TextResponse  string                `json:"text_response,omitempty"`
+	TotalTokens   int64                 `json:"total_tokens,omitempty"`
 }
 
 type FunctionCallRequest struct {
-	Name string
-	Args map[string]string
+	Name string            `json:"name"`
+	Args map[string]string `json:"args"`
 }
 
 type Client struct {
@@ -188,6 +193,9 @@ func processResponse(resp *genai.GenerateContentResponse) (*AnalysisResult, erro
 	}
 
 	result := &AnalysisResult{}
+	if resp.UsageMetadata != nil {
+		result.TotalTokens = resp.UsageMetadata.TotalTokenCount
+	}
 	var textParts []string
 
 	for _, cand := range resp.Candidates {

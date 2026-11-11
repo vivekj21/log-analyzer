@@ -10,10 +10,10 @@ import (
 
 type FetcherAgent struct {
 	bus      *protocol.AgentBus
-	executor *toolbox.SandboxedExecutor
+	executor toolbox.ToolExecutor
 }
 
-func NewFetcherAgent(bus *protocol.AgentBus, executor *toolbox.SandboxedExecutor) *FetcherAgent {
+func NewFetcherAgent(bus *protocol.AgentBus, executor toolbox.ToolExecutor) *FetcherAgent {
 	return &FetcherAgent{
 		bus:      bus,
 		executor: executor,

@@ -1,0 +1,6 @@
+{
+  "list_pods": "NAME                                            READY   STATUS    RESTARTS   AGE\ninventory-service-59bc657b9f-t4w8r              1/1     Running   0          3d\ninventory-service-59bc657b9f-z6p8m              1/1     Running   0          3d",
+  "get_events": "No events found in default namespace.",
+  "describe_pod": "Name:         inventory-service-59bc657b9f-t4w8r\nNamespace:    default\nStatus:       Running\nConditions:\n  Type              Status\n  Initialized       True \n  Ready             True \n  ContainersReady   True \n  PodScheduled      True",
+  "get_pod_logs": "2026-11-11T10:35:01Z INFO [http] GET /healthz 200 OK 2ms\n2026-11-11T10:35:05Z INFO [http] GET /api/v1/items/42 200 OK 12ms\n2026-11-11T10:35:10Z INFO [http] GET /api/v1/items/99 200 OK 15ms"
+}

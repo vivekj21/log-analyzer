@@ -11,14 +11,14 @@ import (
 )
 
 type AnalyzerAgent struct {
-	bus    *protocol.AgentBus
-	gemini *llm.Client
+	bus   *protocol.AgentBus
+	model llm.Model
 }
 
-func NewAnalyzerAgent(bus *protocol.AgentBus, gemini *llm.Client) *AnalyzerAgent {
+func NewAnalyzerAgent(bus *protocol.AgentBus, model llm.Model) *AnalyzerAgent {
 	return &AnalyzerAgent{
-		bus:    bus,
-		gemini: gemini,
+		bus:   bus,
+		model: model,
 	}
 }
 
@@ -45,10 +45,10 @@ func (a *AnalyzerAgent) handleMessage(ctx context.Context, msg protocol.Message)
 	var err error
 
 	if payload.IsFollowUp {
-		result, err = a.gemini.SendToolResults(ctx, msg.InvestigationID, payload.ToolResults)
+		result, err = a.model.SendToolResults(ctx, msg.InvestigationID, payload.ToolResults)
 	} else {
 		prompt := buildInvestigationPrompt(payload)
-		result, err = a.gemini.Analyze(ctx, msg.InvestigationID, prompt)
+		result, err = a.model.Analyze(ctx, msg.InvestigationID, prompt)
 	}
 
 	if err != nil {
