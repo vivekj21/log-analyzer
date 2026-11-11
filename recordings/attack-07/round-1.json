@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "namespace": "default",
+        "pod": "inventory-service-79b8c65-k4m9v"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 840
+}

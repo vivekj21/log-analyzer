@@ -1,0 +1,6 @@
+{
+  "category": "CRASHLOOP_BAD_CONFIG",
+  "must_mention": [
+    "configuration"
+  ]
+}

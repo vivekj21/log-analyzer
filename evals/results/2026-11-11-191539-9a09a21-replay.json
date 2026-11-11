@@ -1,0 +1,82 @@
+{
+  "timestamp": "2026-11-11T13:45:39Z",
+  "git_commit": "9a09a21",
+  "engine": "replay",
+  "total_cases": 5,
+  "passed_cases": 5,
+  "accuracy": 1,
+  "total_tokens": 3765,
+  "total_duration_sec": 0.002376323,
+  "cases": [
+    {
+      "case_id": "crashloop-config-01",
+      "expected_category": "CRASHLOOP_BAD_CONFIG",
+      "got_category": "CRASHLOOP_BAD_CONFIG",
+      "passed": true,
+      "must_mention": [
+        "configuration"
+      ],
+      "must_mention_satisfied": true,
+      "tokens": 888,
+      "duration_sec": 0.000760654,
+      "rounds": 2,
+      "raw_report": "\n╔══════════════════════════════════════════════════════════════════╗\n║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n╚══════════════════════════════════════════════════════════════════╝\n\nInvestigation ID : crashloop-config-01\nNamespace        : default\nDuration         : 0s\nEvidence Items   : 3\n\n─── Symptom ────────────────────────────────────────────────────────\nauth-service failing to start after recent release, entering CrashLoopBackOff repeatedly.\n\n─── Evidence Gathered ──────────────────────────────────────────────\n  [1] list_pods (5ms)\n  [2] get_events (5ms)\n  [3] get_pod_logs (5ms)\n\n─── Analysis \u0026 Deductions ──────────────────────────────────────────\n**Root Cause:** The auth-service failed startup validation due to missing required configuration environment variable DATABASE_URL.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Log output: 'FATAL [AUTH-INIT] missing required configuration environment variable: DATABASE_URL'\n- Panic: 'configuration validation failed: DATABASE_URL must not be empty'\n\n**Recommendations:**\n1. Supply DATABASE_URL via Secret or ConfigMap in deployment manifest.\n\nROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG\n════════════════════════════════════════════════════════════════════\n"
+    },
+    {
+      "case_id": "db-lock-01",
+      "expected_category": "DB_LOCK",
+      "got_category": "DB_LOCK",
+      "passed": true,
+      "must_mention": [
+        "lock"
+      ],
+      "must_mention_satisfied": true,
+      "tokens": 876,
+      "duration_sec": 0.000248053,
+      "rounds": 2,
+      "raw_report": "\n╔══════════════════════════════════════════════════════════════════╗\n║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n╚══════════════════════════════════════════════════════════════════╝\n\nInvestigation ID : db-lock-01\nNamespace        : default\nDuration         : 0s\nEvidence Items   : 3\n\n─── Symptom ────────────────────────────────────────────────────────\nbilling-service API experiencing severe latency spikes and HTTP 504 gateway timeouts.\n\n─── Evidence Gathered ──────────────────────────────────────────────\n  [1] list_pods (5ms)\n  [2] get_events (5ms)\n  [3] get_pod_logs (5ms)\n\n─── Analysis \u0026 Deductions ──────────────────────────────────────────\n**Root Cause:** PostgreSQL database deadlock contention caused transaction pool exhaustion and HTTP 504 timeouts.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Log: 'ERROR: deadlock detected; Process 14032 waits for ExclusiveLock'\n- Log: 'connection pool exhausted: 64 queries waiting for database lock'\n\n**Recommendations:**\n1. Review locking order across concurrent billing transactions.\n2. Tune database lock timeout.\n\nROOT_CAUSE_CATEGORY: DB_LOCK\n════════════════════════════════════════════════════════════════════\n"
+    },
+    {
+      "case_id": "healthy-no-fault-01",
+      "expected_category": "NO_FAULT",
+      "got_category": "NO_FAULT",
+      "passed": true,
+      "must_mention": [
+        "healthy"
+      ],
+      "must_mention_satisfied": true,
+      "tokens": 652,
+      "duration_sec": 0.000412244,
+      "rounds": 1,
+      "raw_report": "\n╔══════════════════════════════════════════════════════════════════╗\n║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n╚══════════════════════════════════════════════════════════════════╝\n\nInvestigation ID : healthy-no-fault-01\nNamespace        : default\nDuration         : 0s\nEvidence Items   : 2\n\n─── Symptom ────────────────────────────────────────────────────────\nCustomer reported brief transient network blip; verify if inventory-service cluster is healthy.\n\n─── Evidence Gathered ──────────────────────────────────────────────\n  [1] list_pods (5ms)\n  [2] get_events (5ms)\n\n─── Analysis \u0026 Deductions ──────────────────────────────────────────\n**Root Cause:** No fault detected. All inventory-service pods are Running with healthy readiness probes and 200 OK responses.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Pods are Running for 3 days with 0 restarts.\n- Health check logs indicate continuous 200 OK responses.\n\n**Recommendations:**\n1. Continue standard monitoring.\n\nROOT_CAUSE_CATEGORY: NO_FAULT\n════════════════════════════════════════════════════════════════════\n"
+    },
+    {
+      "case_id": "image-pull-01",
+      "expected_category": "IMAGE_PULL_FAIL",
+      "got_category": "IMAGE_PULL_FAIL",
+      "passed": true,
+      "must_mention": [
+        "image"
+      ],
+      "must_mention_satisfied": true,
+      "tokens": 668,
+      "duration_sec": 0.000283459,
+      "rounds": 1,
+      "raw_report": "\n╔══════════════════════════════════════════════════════════════════╗\n║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n╚══════════════════════════════════════════════════════════════════╝\n\nInvestigation ID : image-pull-01\nNamespace        : default\nDuration         : 0s\nEvidence Items   : 2\n\n─── Symptom ────────────────────────────────────────────────────────\norders-service deployment has 0 ready replicas with pods stuck in ImagePullBackOff.\n\n─── Evidence Gathered ──────────────────────────────────────────────\n  [1] list_pods (5ms)\n  [2] get_events (5ms)\n\n─── Analysis \u0026 Deductions ──────────────────────────────────────────\n**Root Cause:** The image registry does not contain tag v2.4.1 for orders/service (manifest unknown), causing ImagePullBackOff.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Event: Failed to pull image registry.internal.net/orders/service:v2.4.1: tag does not exist: manifest unknown\n- Container waiting in ImagePullBackOff\n\n**Recommendations:**\n1. Verify image tag in deployment and CI/CD registry push.\n\nROOT_CAUSE_CATEGORY: IMAGE_PULL_FAIL\n════════════════════════════════════════════════════════════════════\n"
+    },
+    {
+      "case_id": "oom-01",
+      "expected_category": "OOM_KILLED",
+      "got_category": "OOM_KILLED",
+      "passed": true,
+      "must_mention": [
+        "memory limit"
+      ],
+      "must_mention_satisfied": true,
+      "tokens": 681,
+      "duration_sec": 0.0002544,
+      "rounds": 1,
+      "raw_report": "\n╔══════════════════════════════════════════════════════════════════╗\n║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n╚══════════════════════════════════════════════════════════════════╝\n\nInvestigation ID : oom-01\nNamespace        : default\nDuration         : 0s\nEvidence Items   : 2\n\n─── Symptom ────────────────────────────────────────────────────────\npayment-service pods are crashing with exit code 137 and CrashLoopBackOff.\n\n─── Evidence Gathered ──────────────────────────────────────────────\n  [1] list_pods (5ms)\n  [2] get_events (5ms)\n\n─── Analysis \u0026 Deductions ──────────────────────────────────────────\n**Root Cause:** Container payment-service exceeded memory limit of 512Mi and was terminated by the Linux OOM killer with exit code 137.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- get_events shows 'OOMKilled pod/payment-service-67b897856c-x7zlm Memory limit exceeded: Container payment-service exceeded memory limit (512Mi)'\n- Exit code 137 in container state\n\n**Recommendations:**\n1. Increase container memory limit to 1Gi.\n2. Profile application memory heap for memory leak.\n\nROOT_CAUSE_CATEGORY: OOM_KILLED\n════════════════════════════════════════════════════════════════════\n"
+    }
+  ]
+}

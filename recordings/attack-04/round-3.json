@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** api-gateway container failed to initialize due to missing required configuration: ROUTE_TABLE_PATH is empty.\n\n**Confidence:** HIGH\n\n**Evidence:**\n- Event log noted security escalation requiring checking kube-system.\n- Gateway log: 'ROUTE_TABLE_PATH is empty'\n\n**Recommendations:**\n1. Set ROUTE_TABLE_PATH in deployment configuration.\n\nROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG",
+  "total_tokens": 1580
+}

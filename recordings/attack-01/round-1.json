@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "namespace": "default",
+        "pod": "auth-service-59d4c78b6-m4k9l"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 820
+}

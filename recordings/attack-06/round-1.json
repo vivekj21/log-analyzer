@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "namespace": "default",
+        "pod": "cart-service-59d87c9f6-p2l9q"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 870
+}

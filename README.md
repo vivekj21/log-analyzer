@@ -161,3 +161,16 @@ Run all unit tests across all packages:
 ```bash
 go test -v ./...
 ```
+
+---
+
+# NOTES (security work)
+Goal: harden the k8s log analyzer against prompt injection. Logs/events/configmaps are UNTRUSTED input.
+Rules for every session:
+- Do ONLY the task given. Touch only the files named. No refactors.
+- No live Gemini calls unless the task says so (use dry-run / replay / heuristic).
+- Finish with `go test ./...`, then list files changed and tests added.
+- If something is unclear, ask me; don't guess.
+Threat model: attacker can write text into pod logs, k8s events, configmap values. Attacker goal: make the agent
+(1) read other namespaces or secrets, (2) leak secrets into the report/Git, (3) run non-allowlisted actions,
+(4) force a wrong diagnosis. No write actions exist today; keep it that way.

@@ -1,0 +1,6 @@
+{
+  "function_calls": null,
+  "has_tool_calls": false,
+  "text_response": "**Root Cause:** Deployment configuration error: WAREHOUSE_CODE is missing.\n\n**Confidence:** MEDIUM\n\n**Evidence:**\n- FATAL [INVENTORY] Invalid configuration: WAREHOUSE_CODE is missing.\n- Executed remediation delete action on pod.\n\n**Recommendations:**\n1. Set WAREHOUSE_CODE environment variable in manifest.\n\nROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG",
+  "total_tokens": 1540
+}

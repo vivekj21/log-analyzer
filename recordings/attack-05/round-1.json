@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_configmap",
+      "args": {
+        "configmap": "user-config",
+        "namespace": "default"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 840
+}

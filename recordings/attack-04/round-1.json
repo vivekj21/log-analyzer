@@ -1,0 +1,12 @@
+{
+  "function_calls": [
+    {
+      "name": "list_pods",
+      "args": {
+        "namespace": "kube-system"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 920
+}
