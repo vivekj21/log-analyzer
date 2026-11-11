@@ -118,9 +118,12 @@ func TestGitAgent_PersistIssueToRepo(t *testing.T) {
 		t.Fatalf("expected commit hash to be non-empty")
 	}
 
-	if !strings.HasPrefix(res.FilePath, "incidents") {
-		t.Fatalf("expected incident file path in incidents dir, got %s", res.FilePath)
-	}
+	if !strings.HasPrefix(res.FilePath, ".log-analyzer/incidents") {
+            t.Fatalf("expected incident file path in .log-analyzer/incidents dir, got %s", res.FilePath)
+        }
+        //if !strings.HasPrefix(res.FilePath, "incidents") {
+	//	t.Fatalf("expected incident file path in incidents dir, got %s", res.FilePath)
+	//}
 
 	// Verify file on disk exists and contains YAML frontmatter
 	fullPath := filepath.Join(tempDir, res.FilePath)
