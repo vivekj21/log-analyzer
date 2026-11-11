@@ -39,7 +39,7 @@ type GitAgentConfig struct {
 
 func DefaultGitAgentConfig() GitAgentConfig {
 	return GitAgentConfig{
-		RepoDir:       ".",
+		RepoDir:       "",
 		IncidentsDir:  ".log-analyzer/incidents",
 		CreateBranch:  true,
 		BranchPrefix:  "incident/",
@@ -57,7 +57,11 @@ type GitAgent struct {
 
 func NewGitAgent(bus *protocol.AgentBus, config GitAgentConfig) *GitAgent {
 	if config.RepoDir == "" {
-		config.RepoDir = "."
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		config.RepoDir = filepath.Join(home, "log-analyzer-incidents")
 	}
 	if config.IncidentsDir == "" {
 		config.IncidentsDir = "incidents"
@@ -136,7 +140,7 @@ func AnalyzeRawLogs(rawLogs string) LogIssue {
 	scanner := bufio.NewScanner(strings.NewReader(rawLogs))
 
 	var (
-		signatures  []string
+		signatures   []string
 		sampleLines  []string
 		oomFound     bool
 		panicFound   bool
@@ -389,6 +393,10 @@ func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequ
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve repo dir %s: %w", repoDir, err)
+	}
+
+	if err := os.MkdirAll(absRepoDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create repo dir %s: %w", absRepoDir, err)
 	}
 
 	// 1. Ensure directory is a Git repository; initialize if not
