@@ -91,7 +91,7 @@ func NewClient(ctx context.Context, apiKey, modelName string, registry *toolbox.
 	config := &genai.GenerateContentConfig{
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{
-				genai.NewPartFromText(systemPrompt),
+				genai.NewPartFromText(systemPrompt + UntrustedDataInstruction),
 			},
 		},
 		Tools: []*genai.Tool{
