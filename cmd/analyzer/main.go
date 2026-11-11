@@ -116,10 +116,11 @@ func main() {
 	// 5. Instantiate and Launch 4 Agents
 	reportChan := make(chan string, 1)
 
-	producerAgent := agent.NewProducerAgent(bus, toolRegistry, reportChan)
+	policy := toolbox.NewPolicy(toolRegistry, toolbox.PolicyConfig{})
+	fetcherAgent := agent.NewFetcherAgent(bus, executor, policy)
+	producerAgent := agent.NewProducerAgent(bus, toolRegistry, reportChan, fetcherAgent)
 	producerAgent.SetGitPersistence(*enableGit, *gitRepo)
 
-	fetcherAgent := agent.NewFetcherAgent(bus, executor)
 	analyzerAgent := agent.NewAnalyzerAgent(bus, model)
 
 	gitConfig := agent.DefaultGitAgentConfig()

@@ -22,10 +22,11 @@ type ProducerAgent struct {
 	reportCh       chan<- string
 	enableGit      bool
 	repoDir        string
+	fetcher        *FetcherAgent
 	mu             sync.Mutex
 }
 
-func NewProducerAgent(bus *protocol.AgentBus, registry *toolbox.ToolRegistry, reportCh chan<- string) *ProducerAgent {
+func NewProducerAgent(bus *protocol.AgentBus, registry *toolbox.ToolRegistry, reportCh chan<- string, fetcher *FetcherAgent) *ProducerAgent {
 	return &ProducerAgent{
 		bus:            bus,
 		registry:       registry,
@@ -34,6 +35,7 @@ func NewProducerAgent(bus *protocol.AgentBus, registry *toolbox.ToolRegistry, re
 		reportCh:       reportCh,
 		enableGit:      true,
 		repoDir:        ".",
+		fetcher:        fetcher,
 	}
 }
 
@@ -83,6 +85,14 @@ func (p *ProducerAgent) startInvestigation(ctx context.Context, msg protocol.Mes
 	p.investigations[inv.ID] = inv
 	p.followUpCounts[inv.ID] = 0
 	p.mu.Unlock()
+
+	// Register the investigation scope with the Fetcher so that the
+	// policy engine can enforce namespace confinement.
+	if p.fetcher != nil {
+		p.fetcher.RegisterInvestigation(inv.ID, toolbox.InvestigationScope{
+			Namespace: payload.Namespace,
+		})
+	}
 
 	inv.SetPhase(protocol.PhaseContextGathering)
 

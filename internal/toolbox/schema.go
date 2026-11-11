@@ -33,6 +33,7 @@ type ToolDefinition struct {
 	Parameters            []ParameterDef
 	IsReadOnly            bool
 	RequiresHumanApproval bool
+	Risk                  RiskLevel
 	CommandBuilder        func(params map[string]string) (binary string, args []string, err error)
 }
 
@@ -203,7 +204,7 @@ func (r *ToolRegistry) registerAllTools() {
 		CommandBuilder: func(params map[string]string) (string, []string, error) {
 			args := []string{"get", "pods", "-n", params["namespace"], "-o", "wide"}
 			if v := params["label_selector"]; v != "" {
-				args = append(args, "-l", v)
+				args = append(args, "-l="+v)
 			}
 			return "kubectl", args, nil
 		},
@@ -290,6 +291,7 @@ func (r *ToolRegistry) registerAllTools() {
 	r.tools["get_configmap"] = &ToolDefinition{
 		Name:        "get_configmap",
 		Description: "Retrieve a ConfigMap data specification.",
+		Risk:        Sensitive,
 		Parameters: []ParameterDef{
 			{Name: "namespace", Type: ParamString, Description: "Kubernetes namespace", Required: true, Pattern: k8sNamespacePattern, MaxLength: 63},
 			{Name: "configmap", Type: ParamString, Description: "ConfigMap name", Required: true, Pattern: k8sNamePattern, MaxLength: 253},

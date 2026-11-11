@@ -375,10 +375,11 @@ func evaluateCase(ctx context.Context, caseDir, caseID string, model llm.Model, 
 	}
 	reportCh := make(chan string, 1)
 
-	producerAgent := agent.NewProducerAgent(bus, registry, reportCh)
+	policy := toolbox.NewPolicy(registry, toolbox.PolicyConfig{})
+	fetcherAgent := agent.NewFetcherAgent(bus, evalExec, policy)
+	producerAgent := agent.NewProducerAgent(bus, registry, reportCh, fetcherAgent)
 	producerAgent.SetGitPersistence(false, "") // Evals never pollute git
 
-	fetcherAgent := agent.NewFetcherAgent(bus, evalExec)
 	analyzerAgent := agent.NewAnalyzerAgent(bus, model)
 
 	go producerAgent.Run(caseCtx)

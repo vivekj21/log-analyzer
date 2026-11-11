@@ -11,13 +11,26 @@ import (
 type FetcherAgent struct {
 	bus      *protocol.AgentBus
 	executor toolbox.ToolExecutor
+	policy   *toolbox.Policy
+
+	// investigations maps investigation IDs to their scope so the policy
+	// can enforce namespace confinement.
+	investigations map[string]toolbox.InvestigationScope
 }
 
-func NewFetcherAgent(bus *protocol.AgentBus, executor toolbox.ToolExecutor) *FetcherAgent {
+func NewFetcherAgent(bus *protocol.AgentBus, executor toolbox.ToolExecutor, policy *toolbox.Policy) *FetcherAgent {
 	return &FetcherAgent{
-		bus:      bus,
-		executor: executor,
+		bus:            bus,
+		executor:       executor,
+		policy:         policy,
+		investigations: make(map[string]toolbox.InvestigationScope),
 	}
+}
+
+// RegisterInvestigation records the scope (namespace) for a new
+// investigation so the policy can enforce namespace confinement.
+func (f *FetcherAgent) RegisterInvestigation(id string, scope toolbox.InvestigationScope) {
+	f.investigations[id] = scope
 }
 
 func (f *FetcherAgent) Run(ctx context.Context) {
@@ -39,6 +52,25 @@ func (f *FetcherAgent) handleMessage(ctx context.Context, msg protocol.Message) 
 	}
 
 	payload := msg.Payload.(protocol.FetchRequestPayload)
+
+	// --- Policy check (before any execution) ---
+	scope := f.investigations[msg.InvestigationID]
+	if f.policy != nil {
+		if denial, err := f.policy.Check(msg.InvestigationID, scope, payload.ToolName, payload.Parameters); err != nil {
+			// Return the denial as the tool result so the model can adapt.
+			f.bus.ProducerCh <- protocol.NewMessage(
+				protocol.MsgFetchResponse,
+				msg.InvestigationID, "fetcher", "producer",
+				protocol.FetchResponsePayload{
+					ToolName: payload.ToolName,
+					Output:   denial,
+					ExitCode: -1,
+				},
+			)
+			return
+		}
+	}
+
 	result, err := f.executor.Execute(ctx, payload.ToolName, payload.Parameters)
 
 	response := protocol.FetchResponsePayload{ToolName: payload.ToolName}
