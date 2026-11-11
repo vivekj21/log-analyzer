@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"k8s-log-analyzer/internal/protocol"
+	"k8s-log-analyzer/internal/redact"
 	"k8s-log-analyzer/internal/toolbox"
 )
 
@@ -81,8 +82,9 @@ func (f *FetcherAgent) handleMessage(ctx context.Context, msg protocol.Message) 
 			response.Duration = result.Duration
 		}
 	} else {
-		response.Output = result.Stdout
-		response.Error = result.Error
+		// Redact secrets from tool output BEFORE it becomes evidence.
+		response.Output = redact.Redact(result.Stdout)
+		response.Error = redact.Redact(result.Error)
 		response.ExitCode = result.ExitCode
 		response.Duration = result.Duration
 	}

@@ -40,7 +40,7 @@ type GitAgentConfig struct {
 func DefaultGitAgentConfig() GitAgentConfig {
 	return GitAgentConfig{
 		RepoDir:       ".",
-		IncidentsDir:  "incidents",
+		IncidentsDir:  ".log-analyzer/incidents",
 		CreateBranch:  true,
 		BranchPrefix:  "incident/",
 		CommitAuthor:  "Autonomous Log Analyzer Agent",
