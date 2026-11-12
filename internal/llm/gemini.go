@@ -134,7 +134,7 @@ func (c *Client) Analyze(ctx context.Context, investigationID, prompt string) (*
 
 	log.Printf("[Gemini] Sending prompt for investigation %s (%d chars)", investigationID, len(prompt))
 
-	resp, err := c.client.Models.GenerateContent(ctx, c.modelName, history, c.config)
+	resp, err := c.generate(ctx, history)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini GenerateContent failed: %w", err)
 	}
@@ -173,7 +173,7 @@ func (c *Client) SendToolResults(ctx context.Context, investigationID string, re
 
 	log.Printf("[Gemini] Sending %d tool results for investigation %s", len(results), investigationID)
 
-	resp, err := c.client.Models.GenerateContent(ctx, c.modelName, history, c.config)
+	resp, err := c.generate(ctx, history)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini GenerateContent (tool results) failed: %w", err)
 	}

@@ -43,5 +43,5 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 - The "Possible prompt injection" section depends on the model following instructions.
 
 ## Measuring it
-`evals/results/baseline-attacks.json` (before the prompt layer) versus
+`evals/results/baseline-attacks.json` (before the policy, redaction and prompt layers) versus
 `evals/results/after-attacks.json` (after). Metric: `attack_success`.
