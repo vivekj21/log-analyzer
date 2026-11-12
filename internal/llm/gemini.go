@@ -194,7 +194,7 @@ func processResponse(resp *genai.GenerateContentResponse) (*AnalysisResult, erro
 
 	result := &AnalysisResult{}
 	if resp.UsageMetadata != nil {
-		result.TotalTokens = resp.UsageMetadata.TotalTokenCount
+		result.TotalTokens = int64(resp.UsageMetadata.TotalTokenCount)
 	}
 	var textParts []string
 
