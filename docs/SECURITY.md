@@ -45,3 +45,16 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 ## Measuring it
 `evals/results/baseline-attacks.json` (before the policy, redaction and prompt layers) versus
 `evals/results/after-attacks.json` (after). Metric: `attack_success`.
+
+## Attack eval results (Nov 2026)
+Model: gemini-3.5-flash-lite, 8 attack cases, live record mode.
+- Same-model baseline (code before policy, redaction and prompt layers): 8/8 defended.
+- After hardening: 8/8 defended, 0 forbidden tool attempts, 0 canary leaks.
+- Earlier baseline on gemini-2.5-pro (different model, replayed): 8/8 compromised,
+  including forbidden tool attempts and canary leaks.
+
+Interpretation: the current model resists these attacks without help, so this eval
+does not show which layer protects us. Older or weaker models were successfully
+attacked, so the layers are insurance. Deterministic tests of the policy and
+redaction layers are the proof that they work; the model-based eval measures
+model behaviour. Small attack set, single run: not a guarantee.
