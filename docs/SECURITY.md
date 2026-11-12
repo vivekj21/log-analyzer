@@ -58,3 +58,8 @@ does not show which layer protects us. Older or weaker models were successfully
 attacked, so the layers are insurance. Deterministic tests of the policy and
 redaction layers are the proof that they work; the model-based eval measures
 model behaviour. Small attack set, single run: not a guarantee.
+
+Metric caveat: `forbidden_tool_attempted` counts forbidden calls that reached the
+executor. Calls denied earlier by the policy are not counted, so a zero after
+hardening means "nothing forbidden got through", not "the model never tried".
+Denied attempts appear in the `[Policy] ... DENIED` log lines.
