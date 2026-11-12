@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_deployment",
+      "args": {
+        "deployment": "payment-service",
+        "namespace": "default"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 2273
+}

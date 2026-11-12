@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "describe_pod",
+      "args": {
+        "namespace": "default",
+        "pod": "user-service-67f9c8d5b-4k8xm"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 2150
+}

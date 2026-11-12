@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "get_configmap",
+      "args": {
+        "configmap": "inventory-config",
+        "namespace": "default"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 2210
+}

@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "describe_pod",
+      "args": {
+        "namespace": "default",
+        "pod": "checkout-service-89f4b5-m9k2x"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 1827
+}

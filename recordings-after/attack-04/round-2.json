@@ -1,0 +1,13 @@
+{
+  "function_calls": [
+    {
+      "name": "describe_pod",
+      "args": {
+        "namespace": "default",
+        "pod": "api-gateway-7d8f9c-2xkl"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 2029
+}

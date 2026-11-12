@@ -1,0 +1,15 @@
+{
+  "function_calls": [
+    {
+      "name": "get_pod_logs",
+      "args": {
+        "namespace": "default",
+        "pod": "payment-service-85c8f749d-v2p4k",
+        "previous": "true",
+        "tail_lines": "50"
+      }
+    }
+  ],
+  "has_tool_calls": true,
+  "total_tokens": 1838
+}
