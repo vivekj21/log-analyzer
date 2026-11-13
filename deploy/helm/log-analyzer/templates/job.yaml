@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: log-analyzer
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: log-analyzer
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: analyzer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - {{ printf "--namespace=%s" .Values.investigation.namespace | quote }}
+            {{- if .Values.investigation.service }}
+            - {{ printf "--service=%s" .Values.investigation.service | quote }}
+            {{- end }}
+            - {{ printf "--symptom=%s" .Values.investigation.symptom | quote }}
+            - {{ printf "--since=%s" .Values.investigation.since | quote }}
+            - {{ printf "--timeout=%s" .Values.investigation.timeout | quote }}
+            - "--git-repo=/data/incidents"
+            {{- if .Values.investigation.dryRun }}
+            - "--dry-run"
+            {{- end }}
+          env:
+            - name: HOME
+              value: /tmp
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "gemini.existingSecret is required" .Values.gemini.existingSecret }}
+                  key: {{ .Values.gemini.secretKey }}
+            {{- if .Values.gemini.model }}
+            - name: GEMINI_MODEL
+              value: {{ .Values.gemini.model | quote }}
+            {{- end }}
+            - name: LOG_ANALYZER_MAX_CALLS
+              value: {{ .Values.limits.maxCalls | quote }}
+            - name: LOG_ANALYZER_MAX_TOKENS
+              value: {{ .Values.limits.maxTokensPerInvestigation | quote }}
+            - name: LOG_ANALYZER_MAX_TOTAL_TOKENS
+              value: {{ .Values.limits.maxTotalTokens | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          {{- if .Values.storage.persistence }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.existingClaim | default (printf "%s-incidents" .Release.Name) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

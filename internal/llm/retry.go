@@ -44,8 +44,8 @@ func retryDelay(err error, attempt int) (time.Duration, bool) {
 	return 0, false
 }
 
-// generate calls Gemini, retrying rate-limit and overload errors.
-func (c *Client) generate(ctx context.Context, history []*genai.Content) (*genai.GenerateContentResponse, error) {
+// generateWithRetry calls Gemini, retrying rate-limit and overload errors.
+func (c *Client) generateWithRetry(ctx context.Context, history []*genai.Content) (*genai.GenerateContentResponse, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		resp, err := c.client.Models.GenerateContent(ctx, c.modelName, history, c.config)

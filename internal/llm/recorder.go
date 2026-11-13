@@ -16,18 +16,18 @@ import (
 type Mode string
 
 const (
-	ModeLive    Mode = "live"
-	ModeRecord  Mode = "record"
-	ModeReplay  Mode = "replay"
+	ModeLive   Mode = "live"
+	ModeRecord Mode = "record"
+	ModeReplay Mode = "replay"
 )
 
 // Recorder implements Model to record LLM interactions to disk or replay them.
 type Recorder struct {
-	mode     Mode
-	baseDir  string
-	wrapped  Model
-	mu       sync.Mutex
-	rounds   map[string]int
+	mode    Mode
+	baseDir string
+	wrapped Model
+	mu      sync.Mutex
+	rounds  map[string]int
 }
 
 // NewRecorder creates a new recorder wrapping the target model in the given mode.

@@ -75,6 +75,8 @@ type Client struct {
 	modelName string
 	config    *genai.GenerateContentConfig
 	histories map[string][]*genai.Content
+	touched   touchMap
+	budget    *Budget
 	mu        sync.Mutex
 }
 
@@ -113,6 +115,8 @@ func NewClient(ctx context.Context, apiKey, modelName string, registry *toolbox.
 		modelName: modelName,
 		config:    config,
 		histories: make(map[string][]*genai.Content),
+		touched:   touchMap{},
+		budget:    NewBudgetFromEnv(),
 	}, nil
 }
 
@@ -128,13 +132,14 @@ func (c *Client) Analyze(ctx context.Context, investigationID, prompt string) (*
 
 	c.mu.Lock()
 	c.histories[investigationID] = append(c.histories[investigationID], userContent)
+	c.touchLocked(investigationID)
 	history := make([]*genai.Content, len(c.histories[investigationID]))
 	copy(history, c.histories[investigationID])
 	c.mu.Unlock()
 
 	log.Printf("[Gemini] Sending prompt for investigation %s (%d chars)", investigationID, len(prompt))
 
-	resp, err := c.generate(ctx, history)
+	resp, err := c.generate(ctx, investigationID, history)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini GenerateContent failed: %w", err)
 	}
@@ -167,13 +172,14 @@ func (c *Client) SendToolResults(ctx context.Context, investigationID string, re
 
 	c.mu.Lock()
 	c.histories[investigationID] = append(c.histories[investigationID], toolContent)
+	c.touchLocked(investigationID)
 	history := make([]*genai.Content, len(c.histories[investigationID]))
 	copy(history, c.histories[investigationID])
 	c.mu.Unlock()
 
 	log.Printf("[Gemini] Sending %d tool results for investigation %s", len(results), investigationID)
 
-	resp, err := c.generate(ctx, history)
+	resp, err := c.generate(ctx, investigationID, history)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini GenerateContent (tool results) failed: %w", err)
 	}

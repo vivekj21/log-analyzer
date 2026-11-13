@@ -1,0 +1,40 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "endpoints", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+{{- if .Values.rbac.allowConfigMaps }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name | default .Release.Name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

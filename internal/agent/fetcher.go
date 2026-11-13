@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"k8s-log-analyzer/internal/ttlmap"
 	"log"
 
 	"k8s-log-analyzer/internal/protocol"
@@ -16,7 +17,7 @@ type FetcherAgent struct {
 
 	// investigations maps investigation IDs to their scope so the policy
 	// can enforce namespace confinement.
-	investigations map[string]toolbox.InvestigationScope
+	investigations *ttlmap.Map[toolbox.InvestigationScope]
 }
 
 func NewFetcherAgent(bus *protocol.AgentBus, executor toolbox.ToolExecutor, policy *toolbox.Policy) *FetcherAgent {
@@ -24,14 +25,14 @@ func NewFetcherAgent(bus *protocol.AgentBus, executor toolbox.ToolExecutor, poli
 		bus:            bus,
 		executor:       executor,
 		policy:         policy,
-		investigations: make(map[string]toolbox.InvestigationScope),
+		investigations: ttlmap.New[toolbox.InvestigationScope](ttlmap.DefaultTTL),
 	}
 }
 
 // RegisterInvestigation records the scope (namespace) for a new
 // investigation so the policy can enforce namespace confinement.
 func (f *FetcherAgent) RegisterInvestigation(id string, scope toolbox.InvestigationScope) {
-	f.investigations[id] = scope
+	f.investigations.Set(id, scope)
 }
 
 func (f *FetcherAgent) Run(ctx context.Context) {
@@ -55,7 +56,7 @@ func (f *FetcherAgent) handleMessage(ctx context.Context, msg protocol.Message) 
 	payload := msg.Payload.(protocol.FetchRequestPayload)
 
 	// --- Policy check (before any execution) ---
-	scope := f.investigations[msg.InvestigationID]
+	scope, _ := f.investigations.Get(msg.InvestigationID)
 	if f.policy != nil {
 		if denial, err := f.policy.Check(msg.InvestigationID, scope, payload.ToolName, payload.Parameters); err != nil {
 			// Return the denial as the tool result so the model can adapt.

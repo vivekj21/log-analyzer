@@ -23,7 +23,7 @@ func main() {
 		service      = flag.String("service", "", "Target microservice/workload name (optional)")
 		symptom      = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
 		since        = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
-		modelName    = flag.String("model", "gemini-2.5-pro", "Gemini model to use for long-context log reasoning")
+		modelName    = flag.String("model", llm.ModelFromEnv(), "Gemini model (env GEMINI_MODEL; built-in default if unset)")
 		llmMode      = flag.String("llm", "live", "LLM execution mode: live, record, replay, heuristic")
 		recordDir    = flag.String("recordings-dir", "recordings", "Directory to store/read LLM recordings")
 		caseID       = flag.String("case-id", "", "Case ID for recordings/replay naming (defaults to generated ID)")

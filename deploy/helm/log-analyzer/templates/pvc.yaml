@@ -1,0 +1,11 @@
+{{- if and .Values.storage.persistence (not .Values.storage.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-incidents
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+{{- end }}

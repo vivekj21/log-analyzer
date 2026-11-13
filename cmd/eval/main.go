@@ -72,7 +72,7 @@ func main() {
 		resultsFile   = flag.String("results-file", "", "Explicit file path to save suite results (overrides automatic naming)")
 		recordingsDir = flag.String("recordings-dir", "recordings", "Path to recordings directory for replay/record")
 		llmMode       = flag.String("llm", "compare", "Evaluation engine: heuristic, replay, live, record, or compare (baseline + Gemini)")
-		modelName     = flag.String("model", "gemini-2.5-pro", "Gemini model name if running live/record")
+		modelName     = flag.String("model", llm.ModelFromEnv(), "Gemini model (env GEMINI_MODEL; built-in default if unset)")
 		timeout       = flag.Duration("case-timeout", 20*time.Second, "Timeout per case evaluation")
 		verbose       = flag.Bool("v", false, "Enable verbose agent logging")
 	)

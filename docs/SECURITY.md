@@ -63,3 +63,8 @@ Metric caveat: `forbidden_tool_attempted` counts forbidden calls that reached th
 executor. Calls denied earlier by the policy are not counted, so a zero after
 hardening means "nothing forbidden got through", not "the model never tried".
 Denied attempts appear in the `[Policy] ... DENIED` log lines.
+
+## Cost controls
+Per-investigation and per-process token and call limits, and a circuit breaker after repeated
+failures (see docs/CONFIG.md). Limits count tokens, not money. When one is hit, the investigation
+ends with a "budget exceeded" error instead of spending more.

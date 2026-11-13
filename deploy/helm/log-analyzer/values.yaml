@@ -1,0 +1,31 @@
+image:
+  repository: log-analyzer
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+gemini:
+  model: ""             # empty = built-in default
+  existingSecret: ""    # name of a Secret holding the API key (required)
+  secretKey: GEMINI_API_KEY
+investigation:
+  namespace: default
+  service: ""
+  symptom: "CrashLoopBackOff and high 5xx error rate observed in logs"
+  since: 1h
+  timeout: 10m
+  dryRun: false
+limits:               # 0 disables a limit
+  maxCalls: 30
+  maxTokensPerInvestigation: 400000
+  maxTotalTokens: 4000000
+job:
+  ttlSecondsAfterFinished: 86400
+rbac:
+  create: true
+  allowConfigMaps: false   # keep false: the tool also denies the secrets ConfigMap by default
+serviceAccount:
+  create: true
+  name: ""
+storage:
+  persistence: false       # false = reports are lost when the pod is deleted
+  size: 1Gi
+  existingClaim: ""

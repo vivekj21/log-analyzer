@@ -22,3 +22,7 @@ type Model interface {
 	Analyze(ctx context.Context, invID, prompt string) (*AnalysisResult, error)
 	SendToolResults(ctx context.Context, invID string, r []protocol.ToolCallResult) (*AnalysisResult, error)
 }
+
+// Forgetter is implemented by models that keep per-investigation state.
+// Call Forget when an investigation is finished to release that state.
+type Forgetter interface{ Forget(invID string) }

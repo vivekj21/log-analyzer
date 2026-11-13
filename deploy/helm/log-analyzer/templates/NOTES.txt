@@ -1,0 +1,6 @@
+Investigation started as Job {{ .Release.Name }}.
+Watch it:     kubectl logs -f job/{{ .Release.Name }} -n {{ .Release.Namespace }}
+Run again:    helm uninstall {{ .Release.Name }} && helm install {{ .Release.Name }} ...
+{{- if not .Values.storage.persistence }}
+Reports are kept only in the log output: set storage.persistence=true to keep the files.
+{{- end }}

@@ -136,7 +136,7 @@ go run ./cmd/analyzer/main.go \
   --service="payment-service" \
   --symptom="HTTP 504 Gateway Timeouts and pods crashing repeatedly" \
   --since="2h" \
-  --model="gemini-2.5-pro" \
+  --model="gemini-3.5-flash-lite" \
   --git=true
 ```
 

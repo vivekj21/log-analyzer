@@ -5,9 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"k8s-log-analyzer/internal/ttlmap"
 	"log"
 	"strings"
-	"sync"
 
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
@@ -16,34 +16,24 @@ import (
 type AnalyzerAgent struct {
 	bus    *protocol.AgentBus
 	model  llm.Model
-	mu     sync.Mutex
-	tokens map[string]string // investigation ID -> random delimiter token
+	tokens *ttlmap.Map[string] // investigation ID -> random delimiter token
 }
 
 func NewAnalyzerAgent(bus *protocol.AgentBus, model llm.Model) *AnalyzerAgent {
-	return &AnalyzerAgent{
-		bus:    bus,
-		model:  model,
-		tokens: make(map[string]string),
-	}
+	return &AnalyzerAgent{bus: bus, model: model, tokens: ttlmap.New[string](ttlmap.DefaultTTL)}
 }
 
 // tokenFor returns the random delimiter token for an investigation,
-// creating it on first use. The model never sees it before the data does,
-// so text inside logs cannot forge a closing delimiter.
+// creating it on first use. Creation is atomic, so concurrent callers agree.
 func (a *AnalyzerAgent) tokenFor(invID string) (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if t, ok := a.tokens[invID]; ok {
+	if t, ok := a.tokens.Get(invID); ok {
 		return t, nil
 	}
 	b := make([]byte, 12)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("cannot generate delimiter token: %w", err)
 	}
-	t := hex.EncodeToString(b)
-	a.tokens[invID] = t
-	return t, nil
+	return a.tokens.GetOrSet(invID, hex.EncodeToString(b)), nil
 }
 
 func (a *AnalyzerAgent) Run(ctx context.Context) {
