@@ -1,176 +1,124 @@
-# Autonomous Multi-Agent Kubernetes & Log Root-Cause Deductor in Go
+# Log Analyzer
 
-An autonomous multi-agent log analysis, root-cause deduction, and GitOps incident tracking system written in Go.
+**An AI on-call helper for Kubernetes. It reads your logs (or investigates a live cluster), finds the likely root cause, and files an incident report in Git. It can look at your cluster. It cannot change it.**
 
----
+> **Status:** early-stage, read-only prototype. Tested on 8 hand-written attack cases, not yet at scale on a real cluster. Read [Limits](#limits) before relying on it.
 
-## 4-Agent Autonomous Architecture
+## In 30 seconds
 
-```
-                      ┌─────────────────────────────────────────┐
-                      │             Producer Agent              │
-                      │  - Investigation State Machine (Init,   │
-                      │    Gathering, Analysis, Follow-up, Done)│
-                      │  - Concurrency & Cycle Orchestration    │
-                      └──────────────┬────────────┬─────────────┘
-                                     │            │
-            Dispatches Tool Calls    │            │ Dispatches Evidence Context
-           & Follow-up Iterations    │            │ & Tool Call Returns
-                                     ▼            ▼
-   ┌───────────────────────────────────┐        ┌──────────────────────────────────┐
-   │         Log Fetcher Agent         │        │        Log Analyzer Agent        │
-   │  - Strict Hardcoded Tool Allowlist│        │  - Gemini Long-Context Reasoning │
-   │  - Parameter Pattern Sanitization │        │  - Multi-Turn Function Calling   │
-   │  - Non-shell Direct Subprocess    │        │  - Failure Pattern Clustering    │
-   │  - Cap output & enforce timeout   │        │  - SRE Recommendations Engine    │
-   └───────────────────────────────────┘        └────────────────┬─────────────────┘
-                                                                 │
-                                                                 │ Persist Incident
-                                                                 ▼
-                                                ┌──────────────────────────────────┐
-                                                │        GitOps Scribe Agent       │
-                                                │  - Log Issue & Anomaly Extractor │
-                                                │  - YAML Frontmatter + Postmortem │
-                                                │  - Auto-Branch (`incident/...`)  │
-                                                │  - Git Commit & Audit Trail      │
-                                                └──────────────────────────────────┘
-```
+| You give it | It does | You get |
+|---|---|---|
+| A log file, or a namespace and a symptom | Collects evidence and asks an AI for the root cause | A markdown report with a severity (P0 to P3) and the root cause, committed to Git |
 
----
+- **Safe by design:** read-only, 10 fixed tools, every request checked, secrets masked. [Details](docs/SECURITY.md)
+- **Cheap to try:** reading a log file needs no API key.
+- **Honest about limits:** the AI can be wrong, so a human should review every report.
 
-## The 4 Agents
+*Root cause* means the main reason something broke. A *namespace* is a named section of a Kubernetes cluster.
 
-### 1. Producer Agent (Orchestrator)
-- **Role**: Coordinates the entire investigation loop and manages mutable state safely (`sync.RWMutex`).
-- **State Machine**:
-  - `PhaseInit` $\rightarrow$ Triggered via incident input or log stream.
-  - `PhaseContextGathering` $\rightarrow$ Dispatches non-invasive discovery commands (`list_pods`, `get_events`).
-  - `PhaseAnalysis` $\rightarrow$ Packages telemetry and prompts the Analyzer Agent.
-  - `PhaseFollowUp` $\rightarrow$ Dynamically triggers subsequent investigative tools requested by the Analyzer.
-  - `PhaseComplete` / `PhaseFailed` $\rightarrow$ Compiles the final SRE incident report and dispatches to the Git Agent.
-- **Circuit Breaker**: Capped via `MaxFollowUpRounds` (default: 10) to prevent runaways and control costs.
+## Quick start
 
-### 2. Log Fetcher Agent (Sandboxed Security Boundary)
-Enforces a **Default-Deny** security posture:
-- **Hardcoded Tool Schema & Allowlist**:
-  - `get_pod_logs`, `list_pods`, `describe_pod`, `get_events`, `get_deployment`, `get_service_endpoints`, `get_node_conditions`, `get_resource_usage`, `get_configmap`, `get_hpa_status`.
-- **Security Guarantees**:
-  - Direct kernel execution (`os/exec.CommandContext`) without shell (`/bin/sh` banned).
-  - Metacharacter blacklist (`;`, `|`, `&`, `` ` ``, `$()`, `${}`, `<`, `>`, `\n`).
-  - Parameter regex sanitization (RFC 1123 DNS subdomains, namespace patterns).
-  - Process limits: `Stdin=nil` (no TTY hijacking), 30s timeout, stdout/stderr truncated at 1 MiB.
+Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a `GEMINI_API_KEY`.
 
-### 3. Log Analyzer Agent (Reasoning Layer)
-- **Role**: Leverages Gemini's long-context window (up to 1M+ tokens) to reason across vast logs, stack traces, and cluster events.
-- **Multi-Turn Function Calling**: When the model notices an anomaly (e.g. restart count > 0, OOMKilled flag), it dynamically calls back to the Fetcher for deeper logs.
-- **Root-Cause Deductions**: Categorizes failures by signature (OOM, CrashLoop, SIGSEGV, connection timeouts, deadlocks) and outputs high-confidence remediation steps.
-
-### 4. GitOps Scribe Agent (Issue Deductor & Git Persistence)
-- **Role**: Reads logs, deduces issues, extracts error signatures, and **sticks them in Git**.
-- **Issue Deduction Engine**:
-  - Parses logs for OOM (exit code 137), Panics, CrashLoops, 5xx cascades, and database locks.
-  - Assigns severity levels: P0 (Critical), P1 (High), P2 (Medium), P3 (Low).
-- **Git Sticking & Versioning**:
-  - Writes structured postmortems (`incidents/YYYY-MM-DD-<severity>-<slug>.md`) with YAML frontmatter.
-  - Creates dedicated incident branches (e.g. `incident/2026-10-27-<id>`).
-  - Commits the incident into Git with an audit trail and semantic message (`incident(P0): ...`).
-
----
-
-## Directory Structure
-
-```
-log_analyzer/
-├── go.mod
-├── go.sum
-├── README.md
-├── cmd/
-│   └── analyzer/
-│       └── main.go                 # CLI entrypoint wiring all 4 agents
-└── internal/
-    ├── protocol/
-    │   └── messages.go             # Typed message bus, envelopes & state machine
-    ├── toolbox/
-    │   ├── schema.go               # Hardcoded Allowlist & strict parameter validators
-    │   ├── executor.go             # Sandboxed direct-subprocess runner (kubectl only)
-    │   └── schema_test.go          # Unit tests verifying injection prevention & deny-default
-    ├── agent/
-    │   ├── producer.go             # Producer orchestrator implementation
-    │   ├── fetcher.go              # Fetcher execution agent implementation
-    │   ├── analyzer.go             # Analyzer reasoning agent implementation
-    │   ├── git_agent.go            # GitOps Scribe: Issue deduction & Git persistence
-    │   └── git_agent_test.go       # Unit tests for log parsing & Git commit operations
-    └── llm/
-        └── gemini.go               # Gemini SDK wrapper, multi-turn chat & tool bindings
-```
-
----
-
-## Running the System
-
-### 1. Requirements
-- Go 1.22+
-- `git` installed
-- `kubectl` configured with cluster access (or run with `--dry-run` or `--log-file`)
-- `GEMINI_API_KEY` (required for LLM reasoning; optional for offline heuristic log file analysis)
-
-### 2. Execution Modes
-
-#### Mode A: Read Log File, Figure Out Issues, and Stick in Git
-Analyze any local application log file directly without needing a live Kubernetes cluster:
+**1. Analyze a log file** (no cluster, no API key):
 
 ```bash
-go run ./cmd/analyzer/main.go \
-  --log-file="/path/to/application.log" \
-  --git-repo="."
+go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
-#### Mode B: Autonomous Kubernetes Incident Investigation
-Investigate a live Kubernetes namespace, deduce root cause, and commit the postmortem to Git:
+The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, which is its own small Git repo. Change the place with `--git-repo`.
+
+**2. Investigate a live cluster:**
 
 ```bash
-export GEMINI_API_KEY="your-gemini-api-key"
-
-go run ./cmd/analyzer/main.go \
-  --namespace="production" \
-  --service="payment-service" \
-  --symptom="HTTP 504 Gateway Timeouts and pods crashing repeatedly" \
-  --since="2h" \
-  --model="gemini-3.5-flash-lite" \
-  --git=true
+export GEMINI_API_KEY="your-key"
+go run ./cmd/analyzer/main.go --namespace=production --service=payment-service \
+  --symptom="HTTP 504 and pods crashing" --since=2h
 ```
 
-#### Mode C: Dry-Run Mode (Simulation)
-Test the entire agent orchestration flow without executing live commands against Kubernetes:
+Add `--dry-run` to print the `kubectl` commands instead of running them.
+
+**3. Run it inside Kubernetes** (new, not yet tested on a real cluster):
 
 ```bash
-export GEMINI_API_KEY="your-gemini-api-key"
-
-go run ./cmd/analyzer/main.go \
-  --namespace="staging" \
-  --symptom="CrashLoopBackOff observed" \
-  --dry-run=true
+make docker-build            # push the image to a registry your cluster can reach
+kubectl create secret generic gemini-key --from-literal=GEMINI_API_KEY="your-key"
+helm install inv1 deploy/helm/log-analyzer --set gemini.existingSecret=gemini-key \
+  --set investigation.namespace=production --set investigation.service=payment-service
+kubectl logs -f job/inv1
 ```
 
----
+The chart grants read-only access and not the secrets ConfigMap by default.
 
-## Testing
+## How it works
 
-Run all unit tests across all packages:
+An *agent* is a program that does one job. Four of them work in a line:
+
+
+- **Producer:** starts the investigation and keeps order.
+- **Fetcher:** collects evidence using 10 fixed read-only tools, with no shell.
+- **Analyzer:** the AI (Gemini). It reads the evidence, asks for more if needed, and picks the cause.
+- **GitOps Scribe:** writes `YYYY-MM-DD-<severity>-<slug>.md` and commits it as `incident(P1): <title>`. Add `--branch` to use a separate branch.
+
+The AI sorts causes into six groups: out of memory, crash loop from bad settings, image pull failure, failing health check, database lock, or no fault. Log-file mode recognizes patterns such as out-of-memory, panics, crash loops, 5xx cascades, database locks, full disks, expired certificates and login attacks.
+
+## Why it is safe
+
+| Layer | What it does |
+|---|---|
+| Untrusted-data delimiters | The AI is told log text is data, never orders |
+| Fixed tools | 10 read-only tools; a test fails if a write tool is added |
+| Parameter checks | Patterns, length limits, no shell metacharacters |
+| Policy | Right namespace only, no secrets ConfigMap by default, at most 12 tool calls, no repeats |
+| Redaction | Secrets are masked before anything is saved |
+| Cost limits | Token and call limits, and a circuit breaker after repeated failures |
+| No write path | Fixes are text suggestions only; an approver that denies everything is the default |
+
+More: [docs/SECURITY.md](docs/SECURITY.md). Tested with 8 attack cases; the current model resisted them even without the layers, so the layers are insurance, proven by deterministic code tests.
+
+## Configuration
+
+| Setting | Meaning |
+|---|---|
+| `GEMINI_API_KEY` | Gemini key (environment variable, never in code) |
+| `GEMINI_MODEL` or `--model` | Model name; the default is in `internal/llm/defaults.go` |
+| `LOG_ANALYZER_MAX_CALLS`, `LOG_ANALYZER_MAX_TOKENS`, `LOG_ANALYZER_MAX_TOTAL_TOKENS` | Cost limits; 0 turns one off |
+
+All settings: [docs/CONFIG.md](docs/CONFIG.md).
+
+## Limits
+
+- **Small test:** 8 hand-written attacks, one run, one small model.
+- **The AI can be wrong.** A human should review every report before acting.
+- **Masking is pattern-based.** Unknown secret formats can slip through.
+- **Logs leave your environment.** They are sent to the Gemini API.
+- **Same-namespace data stays readable.** Run with a read-only Kubernetes account.
+- **It suggests, never fixes.** You apply any fix yourself.
+- **Reports are stored outside the repo** and are not backed up unless you push that folder.
+- **Model names expire.** Keep `--model` current; free Gemini tiers have low limits.
+
+Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Develop
 
 ```bash
-go test -v ./...
+make ci           # the full check, same as GitHub; free, needs no key
+make hooks        # run it before every git push
+make check-model  # can my key use this model?
+make eval-live    # re-run the attack tests on the current model (costs money)
 ```
 
----
-
-# NOTES (security work)
-Goal: harden the k8s log analyzer against prompt injection. Logs/events/configmaps are UNTRUSTED input.
-Rules for every session:
-- Do ONLY the task given. Touch only the files named. No refactors.
-- No live Gemini calls unless the task says so (use dry-run / replay / heuristic).
-- Finish with `go test ./...`, then list files changed and tests added.
-- If something is unclear, ask me; don't guess.
-Threat model: attacker can write text into pod logs, k8s events, configmap values. Attacker goal: make the agent
-(1) read other namespaces or secrets, (2) leak secrets into the report/Git, (3) run non-allowlisted actions,
-(4) force a wrong diagnosis. No write actions exist today; keep it that way.
+## Project layout
+cmd/analyzer the program
+cmd/eval attack tests against recorded or live AI answers
+internal/agent producer, fetcher, analyzer, git agent
+internal/toolbox the 10 read-only tools, validation, policy
+internal/redact secret masking
+internal/llm Gemini client, recorder, cost limits
+internal/protocol messages between agents
+internal/ttlmap map whose idle entries expire
+evals/ attack cases and results
+deploy/helm Helm chart
+docs/ SECURITY.md, CONFIG.md, ROADMAP.md
+testdata/ sample logs
+incidents/ reports written by early runs
