@@ -5,6 +5,10 @@
 It investigates an incident on its own, explains the root cause, and files the report in Git.
 </p>
 
+<p align="center">
+<a href="https://github.com/vivekj21/log-analyzer/actions/workflows/ci.yml"><img src="https://github.com/vivekj21/log-analyzer/actions/workflows/ci.yml/badge.svg" alt="ci status"/></a>
+</p>
+
 > It can look at your cluster. It has no way to change it.
 
 ## What it does
@@ -168,5 +172,5 @@ incidents/        reports written by early runs
 - It suggests fixes and never applies them.
 - Reports are stored outside the repo and are not backed up unless you push that folder.
 - Model names expire. Keep `--model` current; free Gemini tiers have low limits.
-- The Docker image and Helm chart are new and have not run on a real cluster yet.
+- The Docker image builds and the Helm chart lints in CI, but neither has run an investigation on a real cluster yet.
 - Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).
