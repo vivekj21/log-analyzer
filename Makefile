@@ -52,3 +52,7 @@ helm-lint:
 
 hooks:
 > @printf '#!/bin/sh\nmake ci\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push && echo "pre-push hook installed: make ci runs before every push"
+
+.PHONY: k3d-e2e
+k3d-e2e:
+> ./scripts/k3d-e2e.sh

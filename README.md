@@ -58,7 +58,7 @@ sequenceDiagram
 
 - **It chooses its own next step.** The AI picks which of 10 read-only tools to call, reads what comes back, and asks for more until it can name the cause (multi-turn function calling).
 - **Four agents, one loop.** Producer, Fetcher, Analyzer and GitOps Scribe pass typed messages, and a state machine keeps the investigation in order.
-- **Autonomy with a leash.** Caps on tool calls (12), follow-up rounds, tokens and model calls, plus a circuit breaker after repeated failures.
+- **Autonomy with a leash.** Caps on tool calls (12), follow-up rounds (10), tokens and model calls, plus a circuit breaker after repeated failures.
 - **Guardrails in code, not hopes.** Every request passes a policy check before it runs: right namespace only, no secrets ConfigMap by default, no repeated calls.
 - **Tested like software.** 8 prompt-injection attack cases, all defended; a fake "obedient" AI that proves the code blocks forbidden requests; offline replay in CI.
 - **A human decides.** Fixes are written as text suggestions. The approver denies every action by default.

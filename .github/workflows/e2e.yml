@@ -1,0 +1,16 @@
+name: e2e
+on:
+  workflow_dispatch:
+jobs:
+  k3d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.9.0 bash
+      - name: End-to-end test on a throwaway k3d cluster
+        run: ./scripts/k3d-e2e.sh
