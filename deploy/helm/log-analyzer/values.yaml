@@ -6,6 +6,8 @@ gemini:
   model: ""             # empty = built-in default
   existingSecret: ""    # name of a Secret holding the API key (required)
   secretKey: GEMINI_API_KEY
+llm:
+  mode: live            # live = real Gemini (needs the secret); heuristic = free rule-based test mode
 investigation:
   namespace: default
   service: ""

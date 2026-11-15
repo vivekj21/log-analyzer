@@ -101,6 +101,15 @@ kubectl logs -f job/inv1
 
 The chart grants read-only access, and not the secrets ConfigMap by default.
 
+**Try it free on a throwaway local cluster** (needs Docker and k3d; no API key, it uses the built-in rule-based model via `--llm heuristic`):
+
+```bash
+make k3d-e2e     # 3 broken apps; checks each report names the right cause
+make helm-k3d    # builds the image, installs the Helm chart, checks the result
+```
+
+Both create their own cluster and delete it afterwards.
+
 ## What is in each report
 
 A file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
@@ -172,5 +181,5 @@ incidents/        reports written by early runs
 - It suggests fixes and never applies them.
 - Reports are stored outside the repo and are not backed up unless you push that folder.
 - Model names expire. Keep `--model` current; free Gemini tiers have low limits.
-- The Docker image builds and the Helm chart lints in CI, but neither has run an investigation on a real cluster yet.
+- The Helm chart and Docker image passed a test on a local k3d cluster with the rule-based model only. They have not yet run a live Gemini investigation on a real cluster.
 - Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).

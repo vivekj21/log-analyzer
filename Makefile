@@ -4,7 +4,7 @@ EVAL_OUT ?= /tmp/log-analyzer-eval-offline.json
 IMAGE ?= log-analyzer
 VERSION ?= 0.1.0
 
-.PHONY: ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint hooks
+.PHONY: ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
 
 # Everything GitHub runs. Needs no API key and makes no paid calls.
 ci: eval-offline fmt-check vet build test race helm-lint
@@ -56,3 +56,6 @@ hooks:
 .PHONY: k3d-e2e
 k3d-e2e:
 > ./scripts/k3d-e2e.sh
+
+helm-k3d:
+> ./scripts/helm-k3d.sh
