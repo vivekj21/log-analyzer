@@ -23,6 +23,7 @@ type ProducerAgent struct {
 	enableGit      bool
 	repoDir        string
 	createBranch   bool
+	onFinish       func(string)
 	fetcher        *FetcherAgent
 	mu             sync.Mutex
 }
@@ -190,6 +191,7 @@ func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.
 		return
 	}
 
+	p.finish(inv.ID)
 	p.reportCh <- report
 }
 
@@ -201,6 +203,7 @@ func (p *ProducerAgent) handleError(ctx context.Context, msg protocol.Message) {
 
 	if inv != nil {
 		inv.Fail()
+		p.finish(inv.ID)
 		p.reportCh <- fmt.Sprintf("Investigation Failed: [%s] %s\n", payload.Code, payload.Message)
 	}
 }
@@ -214,6 +217,7 @@ func (p *ProducerAgent) dispatchFetches(investigationID string, requests []proto
 		return
 	}
 
+	requests = withNamespace(requests, inv.Namespace)
 	inv.SetPendingFetches(len(requests))
 	for _, req := range requests {
 		p.bus.FetcherCh <- protocol.NewMessage(protocol.MsgFetchRequest, investigationID, "producer", "fetcher", req)
@@ -236,6 +240,7 @@ func (p *ProducerAgent) forceComplete(inv *protocol.Investigation, reason string
 		return
 	}
 
+	p.finish(inv.ID)
 	p.reportCh <- inv.FinalReport
 }
 
@@ -267,6 +272,7 @@ func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protoc
 		inv.FinalReport = fmt.Sprintf("%s\n\n[GitOps] ⚠ Git persistence failed: %s\n", inv.FinalReport, payload.Error)
 	}
 
+	p.finish(inv.ID)
 	p.reportCh <- inv.FinalReport
 }
 

@@ -123,6 +123,11 @@ func main() {
 	producerAgent.SetGitPersistence(*enableGit, *gitRepo)
 
 	analyzerAgent := agent.NewAnalyzerAgent(bus, model)
+	producerAgent.SetCleanup(func(id string) {
+		fetcherAgent.Forget(id)
+		analyzerAgent.Forget(id)
+		policy.ResetInvestigation(id)
+	})
 
 	gitConfig := agent.DefaultGitAgentConfig()
 	gitConfig.RepoDir = *gitRepo

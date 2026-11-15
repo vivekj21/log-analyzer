@@ -30,16 +30,14 @@ func (h *HeuristicModel) Analyze(ctx context.Context, invID, prompt string) (*An
 		strings.Contains(lower, "fail") || strings.Contains(lower, "timeout") ||
 		strings.Contains(lower, "latency") || strings.Contains(lower, "slow") ||
 		strings.Contains(lower, "5xx") || strings.Contains(lower, "504") {
-		pod := "target-pod"
-		if matches := podNameRegex.FindStringSubmatch(prompt); len(matches) > 1 {
-			pod = matches[1]
+		if pod := pickPod(prompt); pod != "" {
+			return &AnalysisResult{
+				HasToolCalls: true,
+				FunctionCalls: []FunctionCallRequest{
+					{Name: "get_pod_logs", Args: map[string]string{"pod": pod, "tail_lines": "100"}},
+				},
+			}, nil
 		}
-		return &AnalysisResult{
-			HasToolCalls: true,
-			FunctionCalls: []FunctionCallRequest{
-				{Name: "get_pod_logs", Args: map[string]string{"pod_name": pod}},
-			},
-		}, nil
 	}
 
 	return &AnalysisResult{TextResponse: formatHeuristicReport(CategoryNoFault, "No anomalies detected; workload appears healthy.")}, nil
@@ -49,6 +47,8 @@ func (h *HeuristicModel) SendToolResults(ctx context.Context, invID string, r []
 	var combined strings.Builder
 	for _, res := range r {
 		combined.WriteString(res.Result)
+		combined.WriteString("\n")
+		combined.WriteString(res.Error)
 		combined.WriteString("\n")
 	}
 
@@ -81,4 +81,21 @@ func evaluateRules(text string) (string, string, bool) {
 func formatHeuristicReport(category, explanation string) string {
 	return fmt.Sprintf("Root Cause: %s\nConfidence: HIGH\nEvidence:\n- Matched heuristic pattern\n\nRecommendations:\n1. Apply standard remediation for %s.\n\nROOT_CAUSE_CATEGORY: %s\n",
 		explanation, category, category)
+}
+
+// podRowRegex matches a row of a "kubectl get pods" table: NAME READY STATUS.
+var podRowRegex = regexp.MustCompile(`(?m)^\s*([a-z0-9][-a-z0-9.]*)\s+\d+/\d+\s+(\S+)`)
+
+// pickPod returns the first pod that is not Running/Completed, else the first pod, else "".
+func pickPod(text string) string {
+	first := ""
+	for _, m := range podRowRegex.FindAllStringSubmatch(text, -1) {
+		if first == "" {
+			first = m[1]
+		}
+		if m[2] != "Running" && m[2] != "Completed" {
+			return m[1]
+		}
+	}
+	return first
 }

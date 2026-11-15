@@ -27,7 +27,7 @@ func TestHeuristicModel_Categories(t *testing.T) {
 		},
 		{
 			name:             "Database deadlock in tool result",
-			prompt:           "billing pod is running but API requests failing",
+			prompt:           "billing pod is running but API requests failing\n" + podTable,
 			toolResults:      []protocol.ToolCallResult{{ToolName: "get_pod_logs", Result: "ERROR: deadlock detected; Process 14 waits for ExclusiveLock"}},
 			expectedCategory: CategoryDBLock,
 		},
@@ -38,7 +38,7 @@ func TestHeuristicModel_Categories(t *testing.T) {
 		},
 		{
 			name:             "Bad configuration panic",
-			prompt:           "CrashLoopBackOff",
+			prompt:           "CrashLoopBackOff\n" + podTable,
 			toolResults:      []protocol.ToolCallResult{{ToolName: "get_pod_logs", Result: "panic: missing required configuration environment variable: DB_URL"}},
 			expectedCategory: CategoryCrashLoopBadConfig,
 		},
@@ -77,3 +77,7 @@ func TestHeuristicModel_Categories(t *testing.T) {
 		})
 	}
 }
+
+// podTable is what "kubectl get pods" prints; the heuristic reads the pod name from it.
+const podTable = "NAME                       READY   STATUS             RESTARTS   AGE\n" +
+	"billing-7d9f8c6b5-abcde    0/1     CrashLoopBackOff   4          5m\n"
