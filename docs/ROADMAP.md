@@ -7,7 +7,7 @@ CI that runs the same locally and on GitHub, Docker image and Helm chart (the la
 
 ## Next: make the core solid
 1. Release working state when an investigation ends, and check the policy and producer for races.
-2. Real-incident test set: past incidents with known causes, so accuracy can be reported.
+2. Real-incident test set: first version done (7 labelled apps, `make accuracy`, scorecard in accuracy/RESULTS.md). Next: more and messier cases, including real past incidents.
 
 ## Then: decide before building
 3. Where logs go: what leaves the environment, which Gemini tier or contract, what the chart allows by default.

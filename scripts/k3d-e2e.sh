@@ -132,6 +132,5 @@ if [ "${LIVE:-0}" = 1 ]; then
   if [ -n "${GEMINI_API_KEY:-}" ]; then run oom oom-demo "pod keeps restarting and being killed" OOM_KILLED live; else echo "LIVE=1 needs GEMINI_API_KEY"; fi
 fi
 echo; echo "logs saved in $OUT"
-exit $FAIL
 if [ "$FAIL" = 0 ]; then echo "E2E PASS"; else echo "E2E FAIL"; fi
 exit "$FAIL"

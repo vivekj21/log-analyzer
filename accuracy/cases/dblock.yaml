@@ -1,0 +1,16 @@
+# expect: DB_LOCK
+# symptom: API requests are timing out
+# simulated: the app only prints database-lock errors; there is no real database
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: dblock, namespace: la-acc-dblock}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: dblock}}
+  template:
+    metadata: {labels: {app: dblock}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo 'ERROR: query failed: Lock wait timeout exceeded; try restarting transaction (table orders, waiting on transaction 8841)'; sleep 3; done"]

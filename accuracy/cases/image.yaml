@@ -1,0 +1,14 @@
+# expect: IMAGE_PULL_FAIL
+# symptom: pod stuck and never starts
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: image, namespace: la-acc-image}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: image}}
+  template:
+    metadata: {labels: {app: image}}
+    spec:
+      containers:
+        - name: app
+          image: registry.invalid/log-analyzer-demo/nope:1.0

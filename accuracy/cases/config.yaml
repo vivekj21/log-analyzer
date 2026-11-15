@@ -1,0 +1,15 @@
+# expect: CRASHLOOP_BAD_CONFIG
+# symptom: pod in CrashLoopBackOff right after deploy
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: config, namespace: la-acc-config}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: config}}
+  template:
+    metadata: {labels: {app: config}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'FATAL: required setting DATABASE_URL is missing, invalid configuration' >&2; exit 1"]

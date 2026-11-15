@@ -1,0 +1,18 @@
+# expect: READINESS_PROBE_FAIL
+# symptom: service gets no traffic, pod shows 0/1 ready
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: readiness, namespace: la-acc-readiness}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: readiness}}
+  template:
+    metadata: {labels: {app: readiness}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'app started, listening'; sleep 3600"]
+          readinessProbe:
+            exec: {command: ["cat", "/tmp/ready"]}
+            periodSeconds: 5

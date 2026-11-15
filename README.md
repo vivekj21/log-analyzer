@@ -111,6 +111,8 @@ make helm-k3d    # builds the image, installs the Helm chart, checks the result
 
 Both create their own cluster and delete it afterwards. To run the chart with real Gemini instead (uses a little of your free quota): `GEMINI_API_KEY=... make helm-k3d-live`.
 
+**How accurate is it?** `make accuracy` runs 7 small broken apps with known causes through the rule-based model and through Gemini, then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini.
+
 If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
 ## What is in each report

@@ -1,0 +1,16 @@
+# expect: NO_FAULT
+# symptom: a user said the site felt slow earlier
+# note: false alarm. The app is fine; the right answer is "no fault"
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: healthy, namespace: la-acc-healthy}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: healthy}}
+  template:
+    metadata: {labels: {app: healthy}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo 'GET /health 200 OK 3ms'; sleep 5; done"]

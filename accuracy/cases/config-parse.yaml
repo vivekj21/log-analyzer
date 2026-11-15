@@ -1,0 +1,16 @@
+# expect: CRASHLOOP_BAD_CONFIG
+# symptom: service restarts every few seconds since the last release
+# note: different wording from the "config" case, so a fixed keyword list is less likely to match
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: config-parse, namespace: la-acc-config-parse}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: config-parse}}
+  template:
+    metadata: {labels: {app: config-parse}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'FATAL: cannot load /etc/app/app.yaml: unknown key listen_prot at line 3' >&2; exit 2"]
