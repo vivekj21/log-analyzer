@@ -24,8 +24,9 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
    get_configmap) are denied by default, 12 calls per investigation, identical
    repeated calls rejected. Rejections return "DENIED: <reason>" to the model.
 5. **Execution:** no shell, direct process start, 30s timeout, output capped at 1 MiB.
-6. **Redaction:** secrets are masked before evidence is stored, so the model,
-   the report and Git only see `[REDACTED]`.
+6. **Redaction:** secrets and email addresses are masked before evidence is stored (cluster mode)
+   and before a log file is read in (log-file mode), so the model, the report and Git only see
+   `[REDACTED]`. `make ci` checks log-file mode end to end. See docs/DATA-FLOW.md.
 7. **Read-only by design:** the Approver interface denies every action. The report
    may list "Suggested fixes" as text only.
 8. **Storage:** incident files go to a directory outside this repo by default.
@@ -33,9 +34,11 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 ## Known residual risks
 - Delimiters are a strong hint, not a hard wall. A model can still be misled
   into a **wrong conclusion** even when it calls no forbidden tool.
-- Redaction is pattern-based. Unknown secret formats can slip through.
-- Logs sent to the Gemini API leave your environment, including any
-  non-secret personal data they contain.
+- Redaction is pattern-based. Unknown secret formats can slip through. Only email addresses are
+  masked as personal data; names, phone numbers, IPs and IDs are not.
+- In live mode, logs sent to the Gemini API leave your environment, including any
+  non-secret personal data they contain. The Helm chart defaults to the rule-based mode and
+  asks for an explicit acknowledgement before live mode.
 - Same-namespace data stays readable. Run with a **read-only Kubernetes
   service account**, so the cluster itself enforces what this code enforces.
 - If `AllowSensitive` is turned on, ConfigMap contents become visible to the model.

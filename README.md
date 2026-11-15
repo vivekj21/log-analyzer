@@ -78,6 +78,8 @@ Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a
 go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
+Secrets and email addresses are masked before anything is saved. If `GEMINI_API_KEY` is set, the (masked) log text is also sent to Gemini; with no key, nothing leaves your machine.
+
 The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, its own small Git repo. Change the place with `--git-repo`.
 
 **2. Investigate a live cluster:**
@@ -96,9 +98,12 @@ Add `--dry-run` to print the `kubectl` commands instead of running them.
 make docker-build            # push the image to a registry your cluster can reach
 kubectl create secret generic gemini-key --from-literal=GEMINI_API_KEY="your-key"
 helm install inv1 deploy/helm/log-analyzer --set gemini.existingSecret=gemini-key \
+  --set llm.mode=live --set llm.acknowledgeDataLeavesCluster=true \
   --set investigation.namespace=production --set investigation.service=payment-service
 kubectl logs -f job/inv1
 ```
+
+The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
 
 The chart grants read-only access, and not the secrets ConfigMap by default.
 
@@ -180,11 +185,11 @@ incidents/        reports written by early runs
 
 - Early stage: tested on 8 hand-written attack cases, one model, one run. The model resisted them even without the code guards, so the guards are insurance, proven by deterministic tests.
 - The AI can be wrong. A human should review every report before acting.
-- Masking is pattern-based, so unknown secret formats can slip through.
-- Logs are sent to the Gemini API, so they leave your environment.
+- Masking is pattern-based (secrets and email addresses). Unknown secret formats and other personal data can slip through.
+- In live mode, logs are sent to the Gemini API and leave your environment. The free Gemini tier may be read by Google reviewers; see [docs/DATA-FLOW.md](docs/DATA-FLOW.md) before using real data.
 - Data in the same namespace stays readable. Run with a read-only Kubernetes account.
 - It suggests fixes and never applies them.
 - Reports are stored outside the repo and are not backed up unless you push that folder.
 - Model names expire. Keep `--model` current; free Gemini tiers have low limits.
-- The Helm chart and Docker image passed a test on a local k3d cluster with the rule-based model only. They have not yet run a live Gemini investigation on a real cluster.
+- The Helm chart and Docker image passed tests on a local k3d cluster, with the rule-based model and with live Gemini. They have not run on a real production cluster.
 - Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).

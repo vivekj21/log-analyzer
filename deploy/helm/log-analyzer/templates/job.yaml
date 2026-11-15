@@ -1,3 +1,9 @@
+{{- if not (has .Values.llm.mode (list "live" "heuristic")) }}
+{{- fail "llm.mode must be live or heuristic" }}
+{{- end }}
+{{- if and (eq .Values.llm.mode "live") (not .Values.llm.acknowledgeDataLeavesCluster) }}
+{{- fail "llm.mode=live sends log text from your cluster to the Gemini API. Read docs/DATA-FLOW.md, then add --set llm.acknowledgeDataLeavesCluster=true to confirm. Or use llm.mode=heuristic to keep everything inside the cluster." }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:

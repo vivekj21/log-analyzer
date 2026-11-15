@@ -7,7 +7,9 @@ gemini:
   existingSecret: ""    # name of a Secret holding the API key (required)
   secretKey: GEMINI_API_KEY
 llm:
-  mode: live            # live = real Gemini (needs the secret); heuristic = free rule-based test mode
+  mode: heuristic       # heuristic = rule-based, nothing leaves the cluster (default, less accurate)
+                        # live = real Gemini: log text leaves the cluster, see docs/DATA-FLOW.md
+  acknowledgeDataLeavesCluster: false   # must be true when mode is live
 investigation:
   namespace: default
   service: ""

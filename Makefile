@@ -4,10 +4,10 @@ EVAL_OUT ?= /tmp/log-analyzer-eval-offline.json
 IMAGE ?= log-analyzer
 VERSION ?= 0.1.0
 
-.PHONY: accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
+.PHONY: check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
 
 # Everything GitHub runs. Needs no API key and makes no paid calls.
-ci: eval-offline fmt-check vet build test race helm-lint
+ci: eval-offline fmt-check vet build test race check-redaction helm-lint
 
 fmt-check:
 > @test -z "$$(gofmt -l .)" || { echo "gofmt needed for:"; gofmt -l .; exit 1; }
@@ -49,6 +49,11 @@ helm-lint:
 >   helm lint deploy/helm/log-analyzer --set gemini.existingSecret=x && \
 >   helm template t deploy/helm/log-analyzer --set gemini.existingSecret=x >/dev/null; \
 > else echo "helm not installed: skipping chart check"; fi
+> @if command -v helm >/dev/null 2>&1; then \
+>   if helm template t deploy/helm/log-analyzer --set llm.mode=live --set gemini.existingSecret=x >/dev/null 2>&1; then echo "FAIL: live mode installed without acknowledging that data leaves the cluster"; exit 1; fi; \
+>   helm template t deploy/helm/log-analyzer --set llm.mode=live --set gemini.existingSecret=x --set llm.acknowledgeDataLeavesCluster=true >/dev/null || { echo "FAIL: live mode with acknowledgement should render"; exit 1; }; \
+>   if helm template t deploy/helm/log-analyzer --set llm.mode=bogus >/dev/null 2>&1; then echo "FAIL: a bad llm.mode was accepted"; exit 1; fi; \
+>   echo "helm-lint: live mode needs acknowledgement, heuristic is the default"; fi
 
 hooks:
 > @printf '#!/bin/sh\nmake ci\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push && echo "pre-push hook installed: make ci runs before every push"
@@ -59,6 +64,9 @@ k3d-e2e:
 
 helm-k3d:
 > ./scripts/helm-k3d.sh
+
+check-redaction:
+> ./scripts/check-redaction.sh
 
 accuracy:
 > ./scripts/accuracy.sh

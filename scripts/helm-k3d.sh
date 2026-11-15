@@ -55,7 +55,7 @@ kubectl get pods -n la-demo
 SECRET_ARGS=()
 if [ "$LLM_MODE" = live ]; then
   kubectl create secret generic gemini-key --from-literal=GEMINI_API_KEY="$GEMINI_API_KEY" >/dev/null || exit 1
-  SECRET_ARGS=(--set gemini.existingSecret=gemini-key)
+  SECRET_ARGS=(--set gemini.existingSecret=gemini-key --set llm.acknowledgeDataLeavesCluster=true)
 fi
 echo "== installing chart (llm.mode=$LLM_MODE)"
 helm install inv1 deploy/helm/log-analyzer --set llm.mode="$LLM_MODE" "${SECRET_ARGS[@]}" \

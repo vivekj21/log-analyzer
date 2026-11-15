@@ -13,6 +13,7 @@ import (
 	"k8s-log-analyzer/internal/agent"
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
+	"k8s-log-analyzer/internal/redact"
 	"k8s-log-analyzer/internal/toolbox"
 )
 
@@ -178,7 +179,8 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 		log.Fatalf("Failed to read log file %s: %v", filePath, err)
 	}
 
-	rawLogs := string(content)
+	// Mask secrets and email addresses first: the text below goes to Gemini (if a key is set) and into the Git report.
+	rawLogs := redact.Redact(string(content))
 	log.Printf("[LogReader] Ingested %d bytes of log data. Extracting issues...", len(rawLogs))
 
 	// 1. Figure out issues using heuristic error signature clustering
@@ -200,7 +202,7 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 
 	// 2. If Gemini is available, enhance with LLM reasoning
 	if apiKey != "" {
-		log.Printf("[Gemini] Enhancing analysis with Gemini model %s...", modelName)
+		log.Printf("[Gemini] GEMINI_API_KEY is set: sending this log file (secrets and email addresses masked, first 50,000 characters) to Gemini model %s. It leaves this machine.", modelName)
 		registry := toolbox.NewToolRegistry()
 		client, err := llm.NewClient(ctx, apiKey, modelName, registry)
 		if err == nil {

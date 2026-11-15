@@ -1,4 +1,4 @@
-// Package redact strips secrets and credentials from tool output before it is
+// Package redact strips secrets, credentials and email addresses from tool output before it is
 // stored as evidence, sent to the LLM, or persisted to Git.  The intent is
 // defence‑in‑depth: even if a Kubernetes Secret, an environment dump, or a
 // config file leaks into diagnostic output, sensitive values never reach the
@@ -40,6 +40,10 @@ var (
 	privateKeyBlockRe = regexp.MustCompile(
 		`(?s)-----BEGIN (?:RSA |EC |DSA |OPENSSH |ED25519 )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA |OPENSSH |ED25519 )?PRIVATE KEY-----`)
 
+	// Email addresses (personal data; applied last, see Redact). A dot and a letters-only ending are required,
+	//    so things like "Listener@493" or "user:pass@db:5432" are left alone.
+	emailRe = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b`)
+
 	// 5. Kubernetes Secret data values – base64 blobs under a "kind: Secret"
 	//    YAML document.  We detect the document boundary and then mask every
 	//    value in the `data:` or `stringData:` mapping.
@@ -73,6 +77,9 @@ func Redact(s string) string {
 
 	// 6. Kubernetes Secret data values.
 	out = redactK8sSecrets(out)
+
+	// 7. Email addresses.
+	out = emailRe.ReplaceAllString(out, placeholder)
 
 	return out
 }
