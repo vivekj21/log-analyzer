@@ -70,7 +70,7 @@ func evaluateRules(text string) (string, string, bool) {
 		return CategoryDBLock, "Database lock contention or deadlock detected.", true
 	case strings.Contains(lower, "readiness probe failed") || strings.Contains(lower, "probe failed") || strings.Contains(lower, "unhealthy"):
 		return CategoryReadinessProbeFail, "Readiness probe failed; container not marked ready.", true
-	case strings.Contains(lower, "panic:") || strings.Contains(lower, "missing required configuration") || strings.Contains(lower, "configuration validation failed") || strings.Contains(lower, "syntax error"):
+	case strings.Contains(lower, "panic:") || strings.Contains(lower, "missing required configuration") || strings.Contains(lower, "configuration validation failed") || strings.Contains(lower, "syntax error") || strings.Contains(lower, "invalid configuration") || strings.Contains(lower, "required setting"):
 		return CategoryCrashLoopBadConfig, "Application crashed due to bad configuration or unhandled panic.", true
 	case strings.Contains(lower, "no events found") && (strings.Contains(lower, "running") || strings.Contains(lower, "200 ok")):
 		return CategoryNoFault, "No fault detected; services operating normally.", true

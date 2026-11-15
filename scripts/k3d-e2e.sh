@@ -109,23 +109,28 @@ kubectl get pods -n la-demo
 
 OUT=$(mktemp -d); FAIL=0
 run() {
-  local name=$1 svc=$2 symptom=$3 mode=${4:-heuristic} repo f
+  local name=$1 svc=$2 symptom=$3 expect=$4 mode=${5:-heuristic} repo f
   repo=$(mktemp -d)
   echo; echo "=== scenario: $name (model mode: $mode)"
   if go run ./cmd/analyzer/main.go --llm "$mode" --namespace la-demo --service "$svc" \
       --symptom "$symptom" --since 30m --git-repo "$repo" --timeout 4m >"$OUT/$name-$mode.log" 2>&1; then
     grep -E "Severity|Root Cause" "$OUT/$name-$mode.log" | head -3
     f=$(find "$repo" -name '*.md' | head -1)
-    if [ -n "$f" ]; then echo "--- report excerpt"; sed -n 1,25p "$f"; else echo "NO REPORT FILE"; FAIL=1; fi
+    if [ -n "$f" ]; then
+      echo "--- report excerpt"; sed -n 1,25p "$f"
+      if sed -n 1,20p "$f" | grep -qF "\"$expect\""; then echo "CHECK OK: $name -> $expect"; else echo "CHECK FAILED: $name expected $expect in committed file"; FAIL=1; fi
+    else echo "NO REPORT FILE"; FAIL=1; fi
   else
     echo "FAILED, last log lines:"; tail -15 "$OUT/$name-$mode.log"; FAIL=1
   fi
 }
-run oom oom-demo "pod keeps restarting and being killed"
-run config config-demo "pod in CrashLoopBackOff right after deploy"
-run image image-demo "pod stuck and never starts"
+run oom oom-demo "pod keeps restarting and being killed" OOM_KILLED
+run config config-demo "pod in CrashLoopBackOff right after deploy" CRASHLOOP_BAD_CONFIG
+run image image-demo "pod stuck and never starts" IMAGE_PULL_FAIL
 if [ "${LIVE:-0}" = 1 ]; then
-  if [ -n "${GEMINI_API_KEY:-}" ]; then run oom oom-demo "pod keeps restarting and being killed" live; else echo "LIVE=1 needs GEMINI_API_KEY"; fi
+  if [ -n "${GEMINI_API_KEY:-}" ]; then run oom oom-demo "pod keeps restarting and being killed" OOM_KILLED live; else echo "LIVE=1 needs GEMINI_API_KEY"; fi
 fi
 echo; echo "logs saved in $OUT"
 exit $FAIL
+if [ "$FAIL" = 0 ]; then echo "E2E PASS"; else echo "E2E FAIL"; fi
+exit "$FAIL"

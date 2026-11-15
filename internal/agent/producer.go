@@ -22,6 +22,7 @@ type ProducerAgent struct {
 	reportCh       chan<- string
 	enableGit      bool
 	repoDir        string
+	createBranch   bool
 	fetcher        *FetcherAgent
 	mu             sync.Mutex
 }
@@ -118,6 +119,9 @@ func (p *ProducerAgent) handleFetchResponse(ctx context.Context, msg protocol.Me
 		return
 	}
 
+	if payload.ToolName == "get_events" {
+		payload.Output = filterEventsForService(payload.Output, inv.Service)
+	}
 	inv.AddEvidence(payload)
 	if !inv.AddPendingResult(payload) {
 		return
@@ -182,7 +186,7 @@ func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.
 	inv.FinalReport = report
 
 	if p.enableGit {
-		p.persistToGit(inv, payload.RootCause, report)
+		p.persistToGit(inv, payload.RootCause, payload.RawAnalysis, report)
 		return
 	}
 
@@ -228,44 +232,19 @@ func (p *ProducerAgent) forceComplete(inv *protocol.Investigation, reason string
 	inv.FinalReport = sb.String()
 
 	if p.enableGit {
-		p.persistToGit(inv, "Partial Investigation", inv.FinalReport)
+		p.persistToGit(inv, "Partial Investigation", "", inv.FinalReport)
 		return
 	}
 
 	p.reportCh <- inv.FinalReport
 }
 
-func (p *ProducerAgent) persistToGit(inv *protocol.Investigation, rootCause, report string) {
-	var logsBuilder strings.Builder
-	for _, ev := range inv.Evidence {
-		if ev.Output != "" {
-			logsBuilder.WriteString(fmt.Sprintf("--- [%s] ---\n%s\n\n", ev.ToolName, ev.Output))
-		}
-	}
-
-	title := fmt.Sprintf("Incident in %s: %s", inv.Namespace, inv.Symptom)
-	if len(title) > 60 {
-		title = title[:60]
-	}
-
-	p.bus.GitCh <- protocol.NewMessage(
-		protocol.MsgGitPersistRequest,
-		inv.ID,
-		"producer",
-		"git",
-		protocol.GitPersistRequestPayload{
-			InvestigationID: inv.ID,
-			Title:           title,
-			Namespace:       inv.Namespace,
-			Service:         inv.Service,
-			Symptom:         inv.Symptom,
-			RootCause:       rootCause,
-			ReportMarkdown:  report,
-			RawLogs:         logsBuilder.String(),
-			RepoDir:         p.repoDir,
-			CreateBranch:    true,
-		},
-	)
+func (p *ProducerAgent) persistToGit(inv *protocol.Investigation, rootCause, raw, report string) {
+	p.mu.Lock()
+	createBranch := p.createBranch
+	p.mu.Unlock()
+	p.bus.GitCh <- protocol.NewMessage(protocol.MsgGitPersistRequest, inv.ID, "producer", "git",
+		buildGitRequest(inv, rootCause, raw, report, p.repoDir, createBranch))
 }
 
 func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protocol.Message) {
@@ -294,7 +273,7 @@ func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protoc
 func (p *ProducerAgent) compileReport(inv *protocol.Investigation, analysis protocol.AnalyzeResponsePayload) string {
 	var sb strings.Builder
 	sb.WriteString("\n╔══════════════════════════════════════════════════════════════════╗\n")
-	sb.WriteString("║            ROOT CAUSE ANALYSIS REPORT (Gemini)                 ║\n")
+	sb.WriteString("║            ROOT CAUSE ANALYSIS REPORT                          ║\n")
 	sb.WriteString("╚══════════════════════════════════════════════════════════════════╝\n\n")
 	sb.WriteString(fmt.Sprintf("Investigation ID : %s\n", inv.ID))
 	sb.WriteString(fmt.Sprintf("Namespace        : %s\n", inv.Namespace))

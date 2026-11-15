@@ -119,6 +119,7 @@ func main() {
 	policy := toolbox.NewPolicy(toolRegistry, toolbox.PolicyConfig{})
 	fetcherAgent := agent.NewFetcherAgent(bus, executor, policy)
 	producerAgent := agent.NewProducerAgent(bus, toolRegistry, reportChan, fetcherAgent)
+	producerAgent.SetCreateBranch(*createBranch)
 	producerAgent.SetGitPersistence(*enableGit, *gitRepo)
 
 	analyzerAgent := agent.NewAnalyzerAgent(bus, model)

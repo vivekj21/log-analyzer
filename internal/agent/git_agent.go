@@ -461,7 +461,7 @@ func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequ
 
 	// 4. Optionally switch to or create an incident branch
 	branchName := req.BranchName
-	if branchName == "" && (g.config.CreateBranch || req.CreateBranch) {
+	if branchName == "" && req.CreateBranch {
 		branchName = fmt.Sprintf("%s%s-%s", g.config.BranchPrefix, dateStr, incidentID)
 	}
 
