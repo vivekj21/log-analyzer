@@ -468,6 +468,7 @@ func extractCategory(report string) string {
 		llm.CategoryReadinessProbeFail,
 		llm.CategoryDBLock,
 		llm.CategoryNoFault,
+		llm.CategoryCannotDetermine,
 	}
 	for _, cat := range categories {
 		if strings.Contains(report, "ROOT_CAUSE_CATEGORY: "+cat) || strings.Contains(report, cat) {

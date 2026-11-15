@@ -119,7 +119,7 @@ run() {
     if [ -n "$f" ]; then
       echo "--- report excerpt"; sed -n 1,25p "$f"
       if sed -n 1,20p "$f" | grep -qF "\"$expect\""; then echo "CHECK OK: $name -> $expect"; else echo "CHECK FAILED: $name expected $expect in committed file"; FAIL=1; fi
-      if grep -q "without recognized signature" "$f"; then echo "CHECK FAILED: $name answer is the catch-all default, not a diagnosis"; FAIL=1; fi
+      if grep -qE "CANNOT_DETERMINE|without recognized signature" "$f"; then echo "CHECK FAILED: $name answer is the catch-all default, not a diagnosis"; FAIL=1; fi
     else echo "NO REPORT FILE"; FAIL=1; fi
   else
     echo "FAILED, last log lines:"; tail -15 "$OUT/$name-$mode.log"; FAIL=1

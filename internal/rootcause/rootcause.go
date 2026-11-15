@@ -14,7 +14,7 @@ var (
 	summaryRe  = regexp.MustCompile(`(?im)^[\s*#>_-]*root cause[\s*_]*:[\s*_]*(.+)$`)
 	known      = []string{
 		llm.CategoryOOMKilled, llm.CategoryCrashLoopBadConfig, llm.CategoryImagePullFail,
-		llm.CategoryReadinessProbeFail, llm.CategoryDBLock, llm.CategoryNoFault,
+		llm.CategoryReadinessProbeFail, llm.CategoryDBLock, llm.CategoryNoFault, llm.CategoryCannotDetermine,
 	}
 )
 

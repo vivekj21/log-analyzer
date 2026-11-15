@@ -7,6 +7,7 @@ It investigates an incident on its own, explains the root cause, and files the r
 
 <p align="center">
 <a href="https://github.com/vivekj21/log-analyzer/actions/workflows/ci.yml"><img src="https://github.com/vivekj21/log-analyzer/actions/workflows/ci.yml/badge.svg" alt="ci status"/></a>
+<a href="https://github.com/vivekj21/log-analyzer/actions/workflows/e2e.yml"><img src="https://github.com/vivekj21/log-analyzer/actions/workflows/e2e.yml/badge.svg" alt="end-to-end status"/></a>
 </p>
 
 > It can look at your cluster. It has no way to change it.
@@ -108,13 +109,15 @@ make k3d-e2e     # 3 broken apps; checks each report names the right cause
 make helm-k3d    # builds the image, installs the Helm chart, checks the result
 ```
 
-Both create their own cluster and delete it afterwards.
+Both create their own cluster and delete it afterwards. To run the chart with real Gemini instead (uses a little of your free quota): `GEMINI_API_KEY=... make helm-k3d-live`.
+
+If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
 ## What is in each report
 
 A file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
 
-The AI sorts causes into six groups: out of memory, crash loop from bad settings, image pull failure, failing health check, database lock, or no fault. Log-file mode recognizes patterns such as out-of-memory, panics, crash loops, 5xx cascades, database locks, full disks, expired certificates and login attacks.
+The AI sorts causes into six groups: out of memory, crash loop from bad settings, image pull failure, failing health check, database lock, or no fault. If it cannot tell, it says so (`CANNOT_DETERMINE`) instead of guessing. Log-file mode recognizes patterns such as out-of-memory, panics, crash loops, 5xx cascades, database locks, full disks, expired certificates and login attacks.
 
 ## Safety layers
 

@@ -40,7 +40,7 @@ func (h *HeuristicModel) Analyze(ctx context.Context, invID, prompt string) (*An
 		}
 	}
 
-	return &AnalysisResult{TextResponse: formatHeuristicReport(CategoryNoFault, "No anomalies detected; workload appears healthy.")}, nil
+	return &AnalysisResult{TextResponse: formatCannotDetermine("The rule-based model found no pod list or recognizable error text to work from.")}, nil
 }
 
 func (h *HeuristicModel) SendToolResults(ctx context.Context, invID string, r []protocol.ToolCallResult) (*AnalysisResult, error) {
@@ -56,7 +56,7 @@ func (h *HeuristicModel) SendToolResults(ctx context.Context, invID string, r []
 		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl)}, nil
 	}
 
-	return &AnalysisResult{TextResponse: formatHeuristicReport(CategoryCrashLoopBadConfig, "Container crashing repeatedly without recognized signature.")}, nil
+	return &AnalysisResult{TextResponse: formatCannotDetermine("The rule-based model read the data but matched none of its known error patterns.")}, nil
 }
 
 func evaluateRules(text string) (string, string, bool) {
@@ -81,6 +81,12 @@ func evaluateRules(text string) (string, string, bool) {
 func formatHeuristicReport(category, explanation string) string {
 	return fmt.Sprintf("Root Cause: %s\nConfidence: HIGH\nEvidence:\n- Matched heuristic pattern\n\nRecommendations:\n1. Apply standard remediation for %s.\n\nROOT_CAUSE_CATEGORY: %s\n",
 		explanation, category, category)
+}
+
+// formatCannotDetermine is the honest answer when the rules have nothing to go on.
+// It must not look like a diagnosis, and it must not say the workload is healthy.
+func formatCannotDetermine(why string) string {
+	return fmt.Sprintf("Root Cause: Cannot tell. %s\nConfidence: LOW\nEvidence:\n- No rule matched the data that was collected\n\nRecommendations:\n1. Check the pods and their logs by hand, or re-run with --llm live for a deeper look.\n\nROOT_CAUSE_CATEGORY: %s\n", why, CategoryCannotDetermine)
 }
 
 // podRowRegex matches a row of a "kubectl get pods" table: NAME READY STATUS.

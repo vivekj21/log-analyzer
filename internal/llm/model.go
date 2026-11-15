@@ -14,6 +14,7 @@ const (
 	CategoryReadinessProbeFail = "READINESS_PROBE_FAIL"
 	CategoryDBLock             = "DB_LOCK"
 	CategoryNoFault            = "NO_FAULT"
+	CategoryCannotDetermine    = "CANNOT_DETERMINE" // not enough data to say; never means "healthy"
 )
 
 // Model defines the interface for language and reasoning backends.

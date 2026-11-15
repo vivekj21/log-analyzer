@@ -8,6 +8,7 @@ func TestCategory(t *testing.T) {
 		"**ROOT_CAUSE_CATEGORY:** oom_killed":       "OOM_KILLED",
 		"the pod was CRASHLOOP_BAD_CONFIG as seen":  "CRASHLOOP_BAD_CONFIG",
 		"nothing recognisable here":                 "",
+		"ROOT_CAUSE_CATEGORY: CANNOT_DETERMINE":     "CANNOT_DETERMINE",
 	}
 	for in, want := range cases {
 		if got := Category(in); got != want {
@@ -26,7 +27,7 @@ func TestSummary(t *testing.T) {
 }
 
 func TestSeverity(t *testing.T) {
-	for cat, want := range map[string]string{"OOM_KILLED": "P1", "IMAGE_PULL_FAIL": "P2", "NO_FAULT": "P3", "": "P2"} {
+	for cat, want := range map[string]string{"OOM_KILLED": "P1", "IMAGE_PULL_FAIL": "P2", "NO_FAULT": "P3", "CANNOT_DETERMINE": "P2", "": "P2"} {
 		if got := Severity(cat); got != want {
 			t.Errorf("Severity(%q)=%q want %q", cat, got, want)
 		}

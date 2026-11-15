@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Installs the Helm chart on a throwaway k3d cluster and checks the result.
-# Free: uses the rule-based model, no API key, no Gemini calls.
+# Default (free): rule-based model, no API key, no Gemini calls.
+# Live check: LLM_MODE=live GEMINI_API_KEY=... ./scripts/helm-k3d.sh  (uses a little Gemini quota)
 set -u
+LLM_MODE="${LLM_MODE:-heuristic}"
+case "$LLM_MODE" in heuristic|live) ;; *) echo "LLM_MODE must be heuristic or live"; exit 1;; esac
+if [ "$LLM_MODE" = live ] && [ -z "${GEMINI_API_KEY:-}" ]; then echo "LLM_MODE=live needs GEMINI_API_KEY in the environment"; exit 1; fi
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:$PATH"
 for c in kubectl k3d docker curl; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
@@ -48,7 +52,13 @@ YAML
 k3d image import "$IMG" -c "$NAME" || exit 1
 echo "== waiting 60s for the fault to show up"; sleep 60
 kubectl get pods -n la-demo
-helm install inv1 deploy/helm/log-analyzer --set llm.mode=heuristic \
+SECRET_ARGS=()
+if [ "$LLM_MODE" = live ]; then
+  kubectl create secret generic gemini-key --from-literal=GEMINI_API_KEY="$GEMINI_API_KEY" >/dev/null || exit 1
+  SECRET_ARGS=(--set gemini.existingSecret=gemini-key)
+fi
+echo "== installing chart (llm.mode=$LLM_MODE)"
+helm install inv1 deploy/helm/log-analyzer --set llm.mode="$LLM_MODE" "${SECRET_ARGS[@]}" \
   --set investigation.namespace=la-demo --set investigation.service=config-demo \
   --set investigation.symptom="pod in CrashLoopBackOff right after deploy" || exit 1
 for i in $(seq 1 60); do
@@ -58,7 +68,9 @@ done
 kubectl logs job/inv1 > /tmp/helm-k3d-job.log 2>&1
 tail -40 /tmp/helm-k3d-job.log
 FAIL=0
-grep -q "ROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG" /tmp/helm-k3d-job.log && echo "CHECK OK: category" || { echo "CHECK FAILED: category"; FAIL=1; }
+# the rule-based model prints an exact line; real Gemini may wrap it in markdown, so match loosely there
+if [ "$LLM_MODE" = live ]; then WANT="CRASHLOOP_BAD_CONFIG"; else WANT="ROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG"; fi
+grep -q "$WANT" /tmp/helm-k3d-job.log && echo "CHECK OK: category" || { echo "CHECK FAILED: category"; FAIL=1; }
 grep -q "Recorded & committed" /tmp/helm-k3d-job.log && echo "CHECK OK: committed" || { echo "CHECK FAILED: not committed"; FAIL=1; }
 [ "$FAIL" = 0 ] && echo "HELM E2E PASS" || echo "HELM E2E FAIL"
 exit "$FAIL"
