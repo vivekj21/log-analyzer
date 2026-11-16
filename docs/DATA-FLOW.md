@@ -6,7 +6,7 @@ Short version: **in the default mode nothing leaves your cluster. In live mode, 
 
 | Mode | Where the data goes | Accuracy (7 test apps) |
 |---|---|---|
-| Rule-based (`--llm heuristic`, the Helm default) | Nowhere. Everything stays on the machine or in the cluster. | 5 of 7. When unsure it says "cannot tell". |
+| Rule-based (`--llm heuristic`, the Helm default) | Nowhere, even if a key is present. Everything stays on the machine or in the cluster. | 5 of 7. When unsure it says "cannot tell". |
 | Live (`--llm live`) | Masked log text goes to the Gemini API. | 7 of 7 |
 
 The scorecard is in [accuracy/RESULTS.md](../accuracy/RESULTS.md). It is a small test, so read its limits before trusting the numbers.
@@ -33,7 +33,7 @@ If your logs can contain personal data of that kind, use the rule-based mode or 
 The incident report is committed to a Git repo (`--git-repo`; in the Helm chart `/data/incidents`, which is lost when the pod is deleted unless `storage.persistence=true`). It holds the symptom, the AI's conclusion, and up to 10,000 characters of masked evidence. Record mode (used for tests) also saves the model conversation to local files; treat those as sensitive.
 
 ## What never leaves
-The Gemini API key is read from an environment variable and used only to sign in to the API. Cluster access uses the pod's Kubernetes service account, with read-only permissions, and those credentials are not part of what is sent.
+The Gemini API key is read from a file (best) or an environment variable and used only to sign in to the API. It is never logged, and the `kubectl` processes the tool starts do not receive it. In the Helm chart it is mounted as a read-only file, not an environment variable. Cluster access uses the pod's Kubernetes service account, with read-only permissions, and those credentials are not part of what is sent.
 
 ## Gemini free tier versus paid
 Google's Gemini API terms treat these differently. In the version of the terms I checked, unpaid use lets human reviewers read inputs and outputs to improve Google's products, and tells you not to submit sensitive, confidential or personal information. Paid use (a project with billing enabled) says prompts and responses are not used to improve products.

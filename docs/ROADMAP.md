@@ -10,7 +10,7 @@ CI that runs the same locally and on GitHub, Docker image and Helm chart (the la
 2. Real-incident test set: first version done (7 labelled apps, `make accuracy`, scorecard in accuracy/RESULTS.md). Next: more and messier cases, including real past incidents.
 
 ## Then: decide before building
-3. Where logs go: decided and documented in docs/DATA-FLOW.md (safe default, explicit switch for live, paid tier for real data). Still open: stronger masking of personal data beyond emails.
+3. Where logs go and credentials: done. Decisions in docs/DATA-FLOW.md; the key comes from a file or the environment through a small provider interface (internal/creds), the chart mounts it as a file. Still open: stronger masking of personal data beyond emails; direct secret-manager providers if people ask.
 4. Credentials: a plugin mechanism plus a good built-in one.
 
 ## Later: after the core is solid

@@ -23,6 +23,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        fsGroup: 10001          # lets the app read the mounted key file (mode 0440)
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -46,11 +47,8 @@ spec:
             - name: HOME
               value: /tmp
             {{- if eq .Values.llm.mode "live" }}
-            - name: GEMINI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ required "gemini.existingSecret is required" .Values.gemini.existingSecret }}
-                  key: {{ .Values.gemini.secretKey }}
+            - name: GEMINI_API_KEY_FILE
+              value: /var/run/secrets/gemini/key
             {{- end }}
             {{- if .Values.gemini.model }}
             - name: GEMINI_MODEL
@@ -72,7 +70,21 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /data
+            {{- if eq .Values.llm.mode "live" }}
+            - name: gemini-key
+              mountPath: /var/run/secrets/gemini
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- if eq .Values.llm.mode "live" }}
+        - name: gemini-key
+          secret:
+            secretName: {{ required "gemini.existingSecret is required" .Values.gemini.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.gemini.secretKey }}
+                path: key
+        {{- end }}
         - name: tmp
           emptyDir: {}
         - name: data

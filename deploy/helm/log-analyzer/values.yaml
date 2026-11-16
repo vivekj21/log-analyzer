@@ -4,8 +4,8 @@ image:
   pullPolicy: IfNotPresent
 gemini:
   model: ""             # empty = built-in default
-  existingSecret: ""    # name of a Secret holding the API key (required)
-  secretKey: GEMINI_API_KEY
+  existingSecret: ""    # name of a Secret holding the API key (required in live mode)
+  secretKey: GEMINI_API_KEY   # the key inside that Secret; it is mounted as a read-only file, not an env var
 llm:
   mode: heuristic       # heuristic = rule-based, nothing leaves the cluster (default, less accurate)
                         # live = real Gemini: log text leaves the cluster, see docs/DATA-FLOW.md

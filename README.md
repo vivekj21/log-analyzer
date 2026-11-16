@@ -78,14 +78,14 @@ Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a
 go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
-Secrets and email addresses are masked before anything is saved. If `GEMINI_API_KEY` is set, the (masked) log text is also sent to Gemini; with no key, nothing leaves your machine.
+Secrets and email addresses are masked before anything is saved. If a Gemini key is set, the (masked) log text is also sent to Gemini, unless you add `--llm heuristic`. With no key, nothing leaves your machine.
 
 The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, its own small Git repo. Change the place with `--git-repo`.
 
 **2. Investigate a live cluster:**
 
 ```bash
-export GEMINI_API_KEY="your-key"
+export GEMINI_API_KEY="your-key"     # or keep it in a file: --gemini-key-file=/path/to/key (safer, see docs/CONFIG.md)
 go run ./cmd/analyzer/main.go --namespace=production --service=payment-service \
   --symptom="HTTP 504 and pods crashing" --since=2h
 ```
@@ -103,7 +103,7 @@ helm install inv1 deploy/helm/log-analyzer --set gemini.existingSecret=gemini-ke
 kubectl logs -f job/inv1
 ```
 
-The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
+In live mode the chart mounts your Secret as a read-only file, not as an environment variable. The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
 
 The chart grants read-only access, and not the secrets ConfigMap by default.
 
@@ -148,7 +148,7 @@ Go, Gemini API (function calling), kubectl, Git, Docker, Helm, GitHub Actions.
 
 | Setting | Meaning |
 |---|---|
-| `GEMINI_API_KEY` | Gemini key (environment variable, never in code) |
+| `--gemini-key-file` / `GEMINI_API_KEY_FILE` / `GEMINI_API_KEY` | Gemini key, from a file (best) or the environment, never in code. See [docs/CONFIG.md](docs/CONFIG.md) |
 | `GEMINI_MODEL` or `--model` | Model name; the default is in `internal/llm/defaults.go` |
 | `LOG_ANALYZER_MAX_CALLS`, `LOG_ANALYZER_MAX_TOKENS`, `LOG_ANALYZER_MAX_TOTAL_TOKENS` | Cost limits; 0 turns one off |
 

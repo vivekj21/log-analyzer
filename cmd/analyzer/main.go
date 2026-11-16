@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"k8s-log-analyzer/internal/agent"
+	"k8s-log-analyzer/internal/creds"
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
 	"k8s-log-analyzer/internal/redact"
@@ -24,6 +25,7 @@ func main() {
 		service      = flag.String("service", "", "Target microservice/workload name (optional)")
 		symptom      = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
 		since        = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
+		keyFile      = flag.String("gemini-key-file", "", "Read the Gemini API key from this file (env GEMINI_API_KEY_FILE does the same). Wins over GEMINI_API_KEY")
 		modelName    = flag.String("model", llm.ModelFromEnv(), "Gemini model (env GEMINI_MODEL; built-in default if unset)")
 		llmMode      = flag.String("llm", "live", "LLM execution mode: live, record, replay, heuristic")
 		recordDir    = flag.String("recordings-dir", "recordings", "Directory to store/read LLM recordings")
@@ -36,7 +38,19 @@ func main() {
 	)
 	flag.Parse()
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
+	// Key sources, in order: --gemini-key-file, GEMINI_API_KEY_FILE, GEMINI_API_KEY.
+	// A key file that is set but unusable stops the program; it never falls back to another source.
+	apiKey, keySource, keyErr := creds.Resolve(
+		creds.FileProvider("--gemini-key-file", *keyFile, func(m string) { log.Printf("[Creds] WARNING: %s", m) }),
+		creds.FileProvider("GEMINI_API_KEY_FILE", os.Getenv("GEMINI_API_KEY_FILE"), func(m string) { log.Printf("[Creds] WARNING: %s", m) }),
+		creds.EnvProvider("GEMINI_API_KEY", os.Getenv),
+	)
+	if keyErr != nil {
+		log.Fatalf("Cannot load the Gemini API key: %v", keyErr)
+	}
+	if apiKey != "" {
+		log.Printf("[Creds] Gemini API key loaded from %s", keySource)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -50,14 +64,18 @@ func main() {
 
 	// Mode 1: Direct Raw Log File Analysis & Git Persistence
 	if *logFile != "" {
-		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, apiKey, *modelName)
+		logKey := apiKey
+		if *llmMode == "heuristic" || *llmMode == "replay" {
+			logKey = "" // these modes must never send anything to Gemini, key or no key
+		}
+		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logKey, *modelName)
 		return
 	}
 
 	// Mode 2: Multi-Agent Kubernetes Cluster Investigation & Git Persistence
 	needsAPIKey := *llmMode == "live" || *llmMode == "record"
 	if needsAPIKey && apiKey == "" {
-		log.Fatalf("GEMINI_API_KEY environment variable is not set. Required for --llm=%s. Set GEMINI_API_KEY, use --llm=heuristic, or use --llm=replay.", *llmMode)
+		log.Fatalf("No Gemini API key found. Required for --llm=%s. Use --gemini-key-file, or set GEMINI_API_KEY_FILE or GEMINI_API_KEY, or use --llm=heuristic or --llm=replay.", *llmMode)
 	}
 
 	log.Printf("Target Namespace : %s", *namespace)
@@ -202,7 +220,7 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 
 	// 2. If Gemini is available, enhance with LLM reasoning
 	if apiKey != "" {
-		log.Printf("[Gemini] GEMINI_API_KEY is set: sending this log file (secrets and email addresses masked, first 50,000 characters) to Gemini model %s. It leaves this machine.", modelName)
+		log.Printf("[Gemini] A Gemini API key is set: sending this log file (secrets and email addresses masked, first 50,000 characters) to Gemini model %s. It leaves this machine.", modelName)
 		registry := toolbox.NewToolRegistry()
 		client, err := llm.NewClient(ctx, apiKey, modelName, registry)
 		if err == nil {

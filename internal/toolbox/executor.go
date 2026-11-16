@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -86,6 +88,7 @@ func (e *SandboxedExecutor) Execute(ctx context.Context, toolName string, params
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Stdin = nil
+	cmd.Env = childEnv(os.Environ())
 
 	err = cmd.Run()
 
@@ -116,4 +119,22 @@ func truncateOutput(s string, maxSize int) string {
 		return s[:maxSize] + "\n... [output truncated at 1 MiB]"
 	}
 	return s
+}
+
+// childEnv is the environment kubectl gets: ours, minus our own GEMINI_* variables (the API key
+// and the key-file path), which kubectl has no use for. Everything else is passed through,
+// because kubectl login plugins may need cloud variables such as AWS_* or KUBECONFIG.
+func childEnv(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		name := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			name = kv[:i]
+		}
+		if strings.HasPrefix(strings.ToUpper(name), "GEMINI_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }

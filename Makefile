@@ -53,7 +53,10 @@ helm-lint:
 >   if helm template t deploy/helm/log-analyzer --set llm.mode=live --set gemini.existingSecret=x >/dev/null 2>&1; then echo "FAIL: live mode installed without acknowledging that data leaves the cluster"; exit 1; fi; \
 >   helm template t deploy/helm/log-analyzer --set llm.mode=live --set gemini.existingSecret=x --set llm.acknowledgeDataLeavesCluster=true >/dev/null || { echo "FAIL: live mode with acknowledgement should render"; exit 1; }; \
 >   if helm template t deploy/helm/log-analyzer --set llm.mode=bogus >/dev/null 2>&1; then echo "FAIL: a bad llm.mode was accepted"; exit 1; fi; \
->   echo "helm-lint: live mode needs acknowledgement, heuristic is the default"; fi
+>   OUT=$$(helm template t deploy/helm/log-analyzer --set llm.mode=live --set gemini.existingSecret=x --set llm.acknowledgeDataLeavesCluster=true); \
+>   echo "$$OUT" | grep -q "GEMINI_API_KEY_FILE" || { echo "FAIL: live mode should pass the key as a mounted file"; exit 1; }; \
+>   if echo "$$OUT" | grep -q "secretKeyRef"; then echo "FAIL: the key must not be passed as an environment variable"; exit 1; fi; \
+>   echo "helm-lint: live mode needs acknowledgement and mounts the key as a file; heuristic is the default"; fi
 
 hooks:
 > @printf '#!/bin/sh\nmake ci\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push && echo "pre-push hook installed: make ci runs before every push"

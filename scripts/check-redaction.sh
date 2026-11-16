@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Checks that log-file mode masks secrets and email addresses before anything is written to Git.
+# Checks that log-file mode masks secrets and email addresses before anything is written to Git,
+# and that --llm heuristic never sends the log to Gemini.
 # No cluster and no API key needed. Part of `make ci`.
 set -u
 cd "$(dirname "$0")/.."
@@ -22,5 +23,8 @@ for needle in CANARY_SECRET_9f3a1c jane.doe@example.com; do
 done
 echo "$FILES" | xargs grep -q -F "[REDACTED]" || { echo "CHECK FAILED: no [REDACTED] marker (was the test log even read?)"; FAIL=1; }
 echo "$FILES" | xargs grep -q -F "out of memory" || { echo "CHECK FAILED: report lost the real error text"; FAIL=1; }
-[ "$FAIL" = 0 ] && echo "check-redaction: OK (secret and email masked, real error kept)"
+# --llm heuristic must never send anything to Gemini, even when a key is present.
+env GEMINI_API_KEY=dummy-key-not-real go run ./cmd/analyzer --log-file "$T/app.log" --git-repo "$T/repo2" --llm heuristic >"$T/out2.log" 2>&1
+if grep -q "sending this log file" "$T/out2.log"; then echo "CHECK FAILED: --llm heuristic still sent the log file to Gemini"; FAIL=1; fi
+[ "$FAIL" = 0 ] && echo "check-redaction: OK (secret and email masked, real error kept, --llm heuristic sends nothing)"
 exit "$FAIL"

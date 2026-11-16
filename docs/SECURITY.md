@@ -30,6 +30,7 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 7. **Read-only by design:** the Approver interface denies every action. The report
    may list "Suggested fixes" as text only.
 8. **Storage:** incident files go to a directory outside this repo by default.
+9. **Credentials:** the Gemini key is read from a file when possible (the Helm chart mounts it read-only, mode 0440). A broken key file stops the program instead of falling back. The key is never logged and is not passed to `kubectl`. See docs/CONFIG.md.
 
 ## Known residual risks
 - Delimiters are a strong hint, not a hard wall. A model can still be misled
