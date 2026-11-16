@@ -79,7 +79,7 @@ func (a *AnalyzerAgent) handleMessage(ctx context.Context, msg protocol.Message)
 	}
 
 	if err != nil {
-		a.sendError(msg.InvestigationID, "GEMINI_ERROR", err.Error())
+		a.sendError(msg.InvestigationID, "MODEL_ERROR", err.Error())
 		return
 	}
 

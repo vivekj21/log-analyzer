@@ -2,8 +2,16 @@
 
 | Setting | Where | Default | Meaning |
 |---|---|---|---|
-| `--gemini-key-file` | flag | none | Read the Gemini key from this file. Best choice: see "Where the key comes from". |
-| `GEMINI_API_KEY_FILE` | environment | none | Same as the flag, as a variable (the Helm chart uses this). |
+| `--provider` | flag / `LLM_PROVIDER` | `gemini` | `gemini`, `openai` (any OpenAI-compatible server) or `anthropic`. |
+| `--model` | flag / `LLM_MODEL` | Gemini only: built-in | Model name. Required for `openai` and `anthropic`. |
+| `--base-url` | flag / `LLM_BASE_URL` | the service's own | Server address for `openai`/`anthropic`. Must be https, or localhost. |
+| `--allow-http` | flag / `LLM_ALLOW_HTTP=true` | off | Allows plain http to another machine (for example a model server inside your cluster). Key and logs are then not encrypted in transit. |
+| `--api-key-file` | flag | none | Read the API key from this file. Best choice: see "Where the key comes from". |
+| `LLM_API_KEY_FILE` | environment | none | Same as the flag, as a variable (the Helm chart uses this). |
+| `LLM_API_KEY` | environment | none | The key as plain text, for any provider. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | environment | none | Used only by their own provider. |
+| `--gemini-key-file` | flag | none | Older name for `--api-key-file`; only with `--provider=gemini`. |
+| `GEMINI_API_KEY_FILE` | environment | none | Older name for `LLM_API_KEY_FILE`; only with `--provider=gemini`. |
 | `GEMINI_API_KEY` | environment | none | Gemini key as plain text. Simple, but easier to leak than a file. Never put it in code. |
 | `GEMINI_MODEL` | environment | see `internal/llm/defaults.go` | Model name. `--model` overrides it. |
 | `LOG_ANALYZER_MAX_CALLS` | environment | 30 | Model calls per investigation. |
@@ -14,11 +22,16 @@
 
 ## Where the key comes from
 Checked in this order; the first one that has a key wins:
-1. `--gemini-key-file`
-2. `GEMINI_API_KEY_FILE`
-3. `GEMINI_API_KEY`
+1. `--api-key-file`
+2. `--gemini-key-file` (Gemini only)
+3. `LLM_API_KEY_FILE`
+4. `GEMINI_API_KEY_FILE` (Gemini only)
+5. `LLM_API_KEY`
+6. the provider's own variable: `GEMINI_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
 
-If a key file is named but is missing, empty, or holds more than just the key, the program stops with a clear message. It does **not** quietly use another source, because that could be a different key. A key file readable by all users gets a warning (use mode 0400 or 0440). The key is never printed or logged. `kubectl`, which the tool starts as a child process, does not receive any `GEMINI_*` variable.
+The Gemini-named sources are skipped for other providers, so a Gemini key can never be sent to another service by mistake.
+
+If a key file is named but is missing, empty, or holds more than just the key, the program stops with a clear message. It does **not** quietly use another source, because that could be a different key. A key file readable by all users gets a warning (use mode 0400 or 0440). The key is never printed or logged. `kubectl`, which the tool starts as a child process, does not receive any `GEMINI_*`, `LLM_*`, `OPENAI_*` or `ANTHROPIC_*` variable.
 
 A file works with any secret tool, because they can all write one:
 - **Kubernetes Secret:** mount it as a volume. The Helm chart does exactly this in live mode (read-only, mode 0440).

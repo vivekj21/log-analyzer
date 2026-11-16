@@ -121,7 +121,7 @@ func truncateOutput(s string, maxSize int) string {
 	return s
 }
 
-// childEnv is the environment kubectl gets: ours, minus our own GEMINI_* variables (the API key
+// childEnv is the environment kubectl gets: ours, minus our own model-service variables (GEMINI_*, LLM_*, OPENAI_*, ANTHROPIC_*: the API key
 // and the key-file path), which kubectl has no use for. Everything else is passed through,
 // because kubectl login plugins may need cloud variables such as AWS_* or KUBECONFIG.
 func childEnv(environ []string) []string {
@@ -131,7 +131,8 @@ func childEnv(environ []string) []string {
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			name = kv[:i]
 		}
-		if strings.HasPrefix(strings.ToUpper(name), "GEMINI_") {
+		up := strings.ToUpper(name)
+		if strings.HasPrefix(up, "GEMINI_") || strings.HasPrefix(up, "LLM_") || strings.HasPrefix(up, "OPENAI_") || strings.HasPrefix(up, "ANTHROPIC_") {
 			continue
 		}
 		out = append(out, kv)

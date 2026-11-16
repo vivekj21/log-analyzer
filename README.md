@@ -26,7 +26,7 @@ It investigates an incident on its own, explains the root cause, and files the r
 flowchart LR
     IN(["Log file or<br/>live cluster"]) --> PR["Producer<br/>runs the investigation loop"]
     PR <--> FE["Fetcher<br/>10 read-only tools<br/>checked, no shell"]
-    PR <--> AN["Analyzer<br/>Gemini decides what to look at next"]
+    PR <--> AN["Analyzer<br/>the AI model decides what to look at next"]
     PR --> GS["GitOps Scribe<br/>writes the report"]
     GS --> OUT[("Git repo<br/>incident report")]
 ```
@@ -78,7 +78,7 @@ Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a
 go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
-Secrets and email addresses are masked before anything is saved. If a Gemini key is set, the (masked) log text is also sent to Gemini, unless you add `--llm heuristic`. With no key, nothing leaves your machine.
+Secrets and email addresses are masked before anything is saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine.
 
 The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, its own small Git repo. Change the place with `--git-repo`.
 
@@ -116,7 +116,21 @@ make helm-k3d    # builds the image, installs the Helm chart, checks the result
 
 Both create their own cluster and delete it afterwards. To run the chart with real Gemini instead (uses a little of your free quota): `GEMINI_API_KEY=... make helm-k3d-live`.
 
-**How accurate is it?** `make accuracy` runs 7 small broken apps with known causes through the rule-based model and through Gemini, then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini.
+**Which AI model?** You choose; nothing is tied to one company:
+
+```bash
+# Gemini (default)
+go run ./cmd/analyzer --namespace=production --gemini-key-file="$HOME/.keys/gemini"
+# Any OpenAI-compatible service: OpenAI, Groq, OpenRouter, Mistral, or Ollama on your own machine
+go run ./cmd/analyzer --namespace=production --provider=openai --base-url=https://api.groq.com/openai/v1 --model=<model name> --api-key-file="$HOME/.keys/groq"
+# Claude
+go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model name> --api-key-file="$HOME/.keys/anthropic"
+```
+
+Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
+Status: Gemini is tested against the real service. The OpenAI-compatible and Anthropic clients are tested end to end against local fake servers; results from real services appear in [accuracy/RESULTS.md](accuracy/RESULTS.md) once someone runs them.
+
+**How accurate is it?** `make accuracy` runs 7 small broken apps with known causes through the rule-based model and through each model service you list (`ACC_MODELS`, see the top of `scripts/accuracy.sh`), then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini.
 
 If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
@@ -142,13 +156,14 @@ More: [docs/SECURITY.md](docs/SECURITY.md)
 
 ## Built with
 
-Go, Gemini API (function calling), kubectl, Git, Docker, Helm, GitHub Actions.
+Go, any of: Gemini, an OpenAI-compatible service (OpenAI, Groq, OpenRouter, Mistral, Ollama, ...) or Anthropic (all with tool calling), kubectl, Git, Docker, Helm, GitHub Actions.
 
 ## Configuration
 
 | Setting | Meaning |
 |---|---|
-| `--gemini-key-file` / `GEMINI_API_KEY_FILE` / `GEMINI_API_KEY` | Gemini key, from a file (best) or the environment, never in code. See [docs/CONFIG.md](docs/CONFIG.md) |
+| `--provider`, `--model`, `--base-url` | Which model service (gemini, openai, anthropic). See [docs/CONFIG.md](docs/CONFIG.md) |
+| `--api-key-file` / `LLM_API_KEY_FILE` / `LLM_API_KEY` | The key, from a file (best) or the environment, never in code. Gemini also accepts `--gemini-key-file`, `GEMINI_API_KEY_FILE`, `GEMINI_API_KEY` |
 | `GEMINI_MODEL` or `--model` | Model name; the default is in `internal/llm/defaults.go` |
 | `LOG_ANALYZER_MAX_CALLS`, `LOG_ANALYZER_MAX_TOKENS`, `LOG_ANALYZER_MAX_TOTAL_TOKENS` | Cost limits; 0 turns one off |
 
@@ -171,7 +186,7 @@ cmd/eval          attack tests against recorded or live AI answers
 internal/agent    producer, fetcher, analyzer, git agent
 internal/toolbox  the 10 read-only tools, validation, policy
 internal/redact   secret masking
-internal/llm      Gemini client, recorder, cost limits
+internal/llm      model clients (Gemini, OpenAI-compatible, Anthropic), recorder, cost limits
 internal/protocol messages between agents
 internal/ttlmap   map whose idle entries expire
 evals/            attack cases and results
@@ -186,10 +201,11 @@ incidents/        reports written by early runs
 - Early stage: tested on 8 hand-written attack cases, one model, one run. The model resisted them even without the code guards, so the guards are insurance, proven by deterministic tests.
 - The AI can be wrong. A human should review every report before acting.
 - Masking is pattern-based (secrets and email addresses). Unknown secret formats and other personal data can slip through.
-- In live mode, logs are sent to the Gemini API and leave your environment. The free Gemini tier may be read by Google reviewers; see [docs/DATA-FLOW.md](docs/DATA-FLOW.md) before using real data.
+- In live mode, logs are sent to the model service you chose and leave your environment (unless it runs on your machine). Free tiers of some services may be read or used for training; see [docs/DATA-FLOW.md](docs/DATA-FLOW.md) before using real data.
 - Data in the same namespace stays readable. Run with a read-only Kubernetes account.
 - It suggests fixes and never applies them.
 - Reports are stored outside the repo and are not backed up unless you push that folder.
-- Model names expire. Keep `--model` current; free Gemini tiers have low limits.
+- Model names expire. Keep `--model` current; free tiers have low limits.
+- The prompt-injection tests (8 attacks) have only been run on Gemini. Other models have not been tested against them yet.
 - The Helm chart and Docker image passed tests on a local k3d cluster, with the rule-based model and with live Gemini. They have not run on a real production cluster.
 - Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).

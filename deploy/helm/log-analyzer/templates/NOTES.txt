@@ -1,6 +1,6 @@
 Investigation started as Job {{ .Release.Name }} (llm.mode={{ .Values.llm.mode }}).
 {{- if eq .Values.llm.mode "live" }}
-Log text from your cluster is being sent to the Gemini API (secrets and email addresses masked).
+Log text from your cluster is being sent to the {{ .Values.llm.provider }} model service{{ if .Values.llm.baseUrl }} at {{ .Values.llm.baseUrl }}{{ end }} (secrets and email addresses masked).
 {{- else }}
 Nothing leaves the cluster. The rule-based model is less accurate than live mode: see accuracy/RESULTS.md.
 {{- end }}

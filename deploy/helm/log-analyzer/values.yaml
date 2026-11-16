@@ -10,6 +10,12 @@ llm:
   mode: heuristic       # heuristic = rule-based, nothing leaves the cluster (default, less accurate)
                         # live = real Gemini: log text leaves the cluster, see docs/DATA-FLOW.md
   acknowledgeDataLeavesCluster: false   # must be true when mode is live
+  provider: gemini      # gemini | openai (any OpenAI-compatible server) | anthropic
+  model: ""             # gemini: empty = built-in default. openai and anthropic: required
+  baseUrl: ""           # openai/anthropic only, e.g. https://api.groq.com/openai/v1 ; empty = the service's own address
+  allowInsecureHttp: false   # true only for a model server inside your own cluster reached over plain http
+  apiKeySecret: ""      # name of the Secret holding the API key (falls back to gemini.existingSecret)
+  apiKeySecretKey: ""   # the key's name inside that Secret (falls back to gemini.secretKey)
 investigation:
   namespace: default
   service: ""

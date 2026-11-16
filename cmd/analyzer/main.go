@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,8 +26,12 @@ func main() {
 		service      = flag.String("service", "", "Target microservice/workload name (optional)")
 		symptom      = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
 		since        = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
-		keyFile      = flag.String("gemini-key-file", "", "Read the Gemini API key from this file (env GEMINI_API_KEY_FILE does the same). Wins over GEMINI_API_KEY")
-		modelName    = flag.String("model", llm.ModelFromEnv(), "Gemini model (env GEMINI_MODEL; built-in default if unset)")
+		provider     = flag.String("provider", envOr("LLM_PROVIDER", llm.ProviderGemini), "Model service: gemini, openai (any OpenAI-compatible server: OpenAI, Groq, OpenRouter, Mistral, Ollama ...) or anthropic (env LLM_PROVIDER)")
+		baseURL      = flag.String("base-url", os.Getenv("LLM_BASE_URL"), "Server address for --provider=openai or anthropic, e.g. https://api.groq.com/openai/v1 (env LLM_BASE_URL). https only, except localhost")
+		allowHTTP    = flag.Bool("allow-http", os.Getenv("LLM_ALLOW_HTTP") == "true", "Allow plain http to a model server on another machine (for example inside your cluster). The key and logs are then NOT encrypted in transit (env LLM_ALLOW_HTTP=true)")
+		apiKeyFile   = flag.String("api-key-file", "", "Read the model API key from this file (env LLM_API_KEY_FILE does the same). Wins over the environment variables")
+		keyFile      = flag.String("gemini-key-file", "", "Same as --api-key-file, kept for existing setups; only for --provider=gemini (env GEMINI_API_KEY_FILE)")
+		modelName    = flag.String("model", "", "Model name (env LLM_MODEL). Gemini has a built-in default (env GEMINI_MODEL); openai and anthropic need one")
 		llmMode      = flag.String("llm", "live", "LLM execution mode: live, record, replay, heuristic")
 		recordDir    = flag.String("recordings-dir", "recordings", "Directory to store/read LLM recordings")
 		caseID       = flag.String("case-id", "", "Case ID for recordings/replay naming (defaults to generated ID)")
@@ -38,18 +43,50 @@ func main() {
 	)
 	flag.Parse()
 
-	// Key sources, in order: --gemini-key-file, GEMINI_API_KEY_FILE, GEMINI_API_KEY.
+	if *modelName == "" {
+		*modelName = os.Getenv("LLM_MODEL")
+	}
+	if *modelName == "" && *provider == llm.ProviderGemini {
+		*modelName = llm.ModelFromEnv()
+	}
+	if *keyFile != "" && *provider != llm.ProviderGemini {
+		log.Fatalf("--gemini-key-file only works with --provider=gemini. Use --api-key-file instead.")
+	}
+
+	// Key sources, first one that has a key wins. The Gemini-named sources only apply to the Gemini
+	// provider, so a Gemini key can never be sent to another service by mistake.
 	// A key file that is set but unusable stops the program; it never falls back to another source.
-	apiKey, keySource, keyErr := creds.Resolve(
-		creds.FileProvider("--gemini-key-file", *keyFile, func(m string) { log.Printf("[Creds] WARNING: %s", m) }),
-		creds.FileProvider("GEMINI_API_KEY_FILE", os.Getenv("GEMINI_API_KEY_FILE"), func(m string) { log.Printf("[Creds] WARNING: %s", m) }),
-		creds.EnvProvider("GEMINI_API_KEY", os.Getenv),
-	)
+	warn := func(m string) { log.Printf("[Creds] WARNING: %s", m) }
+	sources := []creds.Provider{creds.FileProvider("--api-key-file", *apiKeyFile, warn)}
+	if *provider == llm.ProviderGemini {
+		sources = append(sources, creds.FileProvider("--gemini-key-file", *keyFile, warn))
+	}
+	sources = append(sources, creds.FileProvider("LLM_API_KEY_FILE", os.Getenv("LLM_API_KEY_FILE"), warn))
+	if *provider == llm.ProviderGemini {
+		sources = append(sources, creds.FileProvider("GEMINI_API_KEY_FILE", os.Getenv("GEMINI_API_KEY_FILE"), warn))
+	}
+	sources = append(sources, creds.EnvProvider("LLM_API_KEY", os.Getenv))
+	switch *provider {
+	case llm.ProviderGemini:
+		sources = append(sources, creds.EnvProvider("GEMINI_API_KEY", os.Getenv))
+	case llm.ProviderOpenAI:
+		sources = append(sources, creds.EnvProvider("OPENAI_API_KEY", os.Getenv))
+	case llm.ProviderAnthropic:
+		sources = append(sources, creds.EnvProvider("ANTHROPIC_API_KEY", os.Getenv))
+	}
+	apiKey, keySource, keyErr := creds.Resolve(sources...)
 	if keyErr != nil {
-		log.Fatalf("Cannot load the Gemini API key: %v", keyErr)
+		log.Fatalf("Cannot load the API key: %v", keyErr)
 	}
 	if apiKey != "" {
-		log.Printf("[Creds] Gemini API key loaded from %s", keySource)
+		log.Printf("[Creds] API key for provider %s loaded from %s", *provider, keySource)
+	}
+	cfg := llm.ProviderConfig{Provider: *provider, APIKey: apiKey, Model: *modelName, BaseURL: *baseURL, AllowHTTP: *allowHTTP}
+	if *allowHTTP && strings.HasPrefix(*baseURL, "http://") {
+		log.Printf("[LLM] WARNING: plain http to %s. The key and your logs are not encrypted on the way.", *baseURL)
+	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid model settings: %v", err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -64,18 +101,18 @@ func main() {
 
 	// Mode 1: Direct Raw Log File Analysis & Git Persistence
 	if *logFile != "" {
-		logKey := apiKey
+		logCfg := cfg
 		if *llmMode == "heuristic" || *llmMode == "replay" {
-			logKey = "" // these modes must never send anything to Gemini, key or no key
+			logCfg.APIKey = "" // these modes must never send anything to a model service, key or no key
 		}
-		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logKey, *modelName)
+		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logCfg)
 		return
 	}
 
 	// Mode 2: Multi-Agent Kubernetes Cluster Investigation & Git Persistence
 	needsAPIKey := *llmMode == "live" || *llmMode == "record"
 	if needsAPIKey && apiKey == "" {
-		log.Fatalf("No Gemini API key found. Required for --llm=%s. Use --gemini-key-file, or set GEMINI_API_KEY_FILE or GEMINI_API_KEY, or use --llm=heuristic or --llm=replay.", *llmMode)
+		log.Fatalf("No API key found for provider %s. Required for --llm=%s. Use --api-key-file, or set LLM_API_KEY_FILE or LLM_API_KEY (or the provider's own variable: GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY), or use --llm=heuristic or --llm=replay.", *provider, *llmMode)
 	}
 
 	log.Printf("Target Namespace : %s", *namespace)
@@ -86,7 +123,7 @@ func main() {
 	log.Printf("Time Window      : %s", *since)
 	log.Printf("LLM Engine / Mode: %s", *llmMode)
 	if *llmMode != "heuristic" {
-		log.Printf("Gemini Model     : %s", *modelName)
+		log.Printf("Model            : %s (%s)", *modelName, *provider)
 		log.Printf("Recordings Dir   : %s", *recordDir)
 	}
 	log.Printf("Dry-Run Mode     : %v", *dryRun)
@@ -113,21 +150,21 @@ func main() {
 		model = llm.NewRecorder(llm.ModeReplay, *recordDir, nil)
 		log.Printf("[Model] Initialized Recorder in REPLAY mode (dir: %s)", *recordDir)
 	case "record":
-		geminiClient, err := llm.NewClient(ctx, apiKey, *modelName, toolRegistry)
+		liveClient, err := llm.NewLive(ctx, cfg, toolRegistry)
 		if err != nil {
-			log.Fatalf("Failed to initialize Gemini reasoning client: %v", err)
+			log.Fatalf("Failed to initialize the reasoning client: %v", err)
 		}
-		defer geminiClient.Close()
-		model = llm.NewRecorder(llm.ModeRecord, *recordDir, geminiClient)
+		defer liveClient.Close()
+		model = llm.NewRecorder(llm.ModeRecord, *recordDir, liveClient)
 		log.Printf("[Model] Initialized Recorder in RECORD mode (dir: %s)", *recordDir)
 	case "live":
-		geminiClient, err := llm.NewClient(ctx, apiKey, *modelName, toolRegistry)
+		liveClient, err := llm.NewLive(ctx, cfg, toolRegistry)
 		if err != nil {
-			log.Fatalf("Failed to initialize Gemini reasoning client: %v", err)
+			log.Fatalf("Failed to initialize the reasoning client: %v", err)
 		}
-		defer geminiClient.Close()
-		model = geminiClient
-		log.Printf("[Model] Initialized live Gemini reasoning client (%s)", *modelName)
+		defer liveClient.Close()
+		model = liveClient
+		log.Printf("[Model] Initialized live reasoning client (%s, %s)", *provider, *modelName)
 	default:
 		log.Fatalf("Invalid --llm mode: %q. Must be one of: live, record, replay, heuristic", *llmMode)
 	}
@@ -177,27 +214,41 @@ func main() {
 		},
 	)
 
-	// 7. Await Result or Signal Cancellation
+	// 7. Await Result or Signal Cancellation.
+	// The exit code matters: a Kubernetes Job or a script must be able to tell a failed
+	// investigation from a finished one.
 	select {
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Println("\n[System] Investigation timed out.")
-		} else {
-			log.Println("\n[System] Interrupted by user. Exiting...")
+			os.Exit(1)
 		}
+		log.Println("\n[System] Interrupted by user. Exiting...")
+		os.Exit(130)
 	case report := <-reportChan:
 		fmt.Println(report)
+		if strings.HasPrefix(report, "Investigation Failed") {
+			os.Exit(1)
+		}
 	}
 }
 
-func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, apiKey, modelName string) {
+// envOr returns the environment variable's value, or def when it is unset or empty.
+func envOr(name, def string) string {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return def
+}
+
+func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, cfg llm.ProviderConfig) {
 	log.Printf("[LogReader] Reading log file: %s", filePath)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Fatalf("Failed to read log file %s: %v", filePath, err)
 	}
 
-	// Mask secrets and email addresses first: the text below goes to Gemini (if a key is set) and into the Git report.
+	// Mask secrets and email addresses first: the text below goes to the model service (if a key is set) and into the Git report.
 	rawLogs := redact.Redact(string(content))
 	log.Printf("[LogReader] Ingested %d bytes of log data. Extracting issues...", len(rawLogs))
 
@@ -218,12 +269,14 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 		reportMarkdown += fmt.Sprintf("1. %s\n", rec)
 	}
 
-	// 2. If Gemini is available, enhance with LLM reasoning
-	if apiKey != "" {
-		log.Printf("[Gemini] A Gemini API key is set: sending this log file (secrets and email addresses masked, first 50,000 characters) to Gemini model %s. It leaves this machine.", modelName)
+	// 2. If a model service is available, enhance with LLM reasoning
+	if cfg.APIKey != "" {
+		log.Printf("[LLM] An API key is set: sending this log file (secrets and email addresses masked, first 50,000 characters) to %s model %s. It leaves this machine unless the server is local.", cfg.Provider, cfg.Model)
 		registry := toolbox.NewToolRegistry()
-		client, err := llm.NewClient(ctx, apiKey, modelName, registry)
-		if err == nil {
+		client, err := llm.NewLive(ctx, cfg, registry)
+		if err != nil {
+			log.Printf("[LLM] Could not start the model client, continuing without it: %v", err)
+		} else {
 			defer client.Close()
 			prompt := fmt.Sprintf("Analyze these application logs and provide deep root cause analysis and fix recommendations:\n\n```\n%s\n```", rawLogs)
 			if len(prompt) > 50000 {

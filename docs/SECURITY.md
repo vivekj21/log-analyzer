@@ -30,14 +30,15 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 7. **Read-only by design:** the Approver interface denies every action. The report
    may list "Suggested fixes" as text only.
 8. **Storage:** incident files go to a directory outside this repo by default.
-9. **Credentials:** the Gemini key is read from a file when possible (the Helm chart mounts it read-only, mode 0440). A broken key file stops the program instead of falling back. The key is never logged and is not passed to `kubectl`. See docs/CONFIG.md.
+9. **Credentials:** the API key is read from a file when possible (the Helm chart mounts it read-only, mode 0440). A broken key file stops the program instead of falling back. The key is never logged and is not passed to `kubectl`. See docs/CONFIG.md.
 
 ## Known residual risks
 - Delimiters are a strong hint, not a hard wall. A model can still be misled
   into a **wrong conclusion** even when it calls no forbidden tool.
 - Redaction is pattern-based. Unknown secret formats can slip through. Only email addresses are
   masked as personal data; names, phone numbers, IPs and IDs are not.
-- In live mode, logs sent to the Gemini API leave your environment, including any
+- The prompt-injection tests have only been run against Gemini. The OpenAI-compatible and Anthropic clients send the same system prompt and untrusted-data rules, but other models have not been attack-tested yet.
+- In live mode, logs sent to the model service leave your environment, including any
   non-secret personal data they contain. The Helm chart defaults to the rule-based mode and
   asks for an explicit acknowledgement before live mode.
 - Same-namespace data stays readable. Run with a **read-only Kubernetes

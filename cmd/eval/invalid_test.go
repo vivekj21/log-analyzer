@@ -8,6 +8,7 @@ func TestInvalidRunDetection(t *testing.T) {
 		want              bool
 	}{
 		{"gemini error", "Investigation Failed: [GEMINI_ERROR] 429", "", true},
+		{"model error", "Investigation Failed: [MODEL_ERROR] HTTP 429", "", true},
 		{"timeout", "", "case investigation timed out", true},
 		{"empty report", "   ", "", true},
 		{"real answer", "ROOT_CAUSE_CATEGORY: OOM_KILLED\nbecause...", "", false},
