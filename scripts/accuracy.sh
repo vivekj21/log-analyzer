@@ -133,7 +133,7 @@ mark() { [ "$1" = "$2" ] && echo "✅ $1" || echo "❌ $1"; }
   echo "$SUM"
   echo
   echo "## What this does not show"
-  echo "- $N cases is a small sample, not a benchmark. One run each; AI answers can differ between runs."
+  echo "- $N cases is a small sample, not a benchmark. One run each. Results can differ between runs: AI answers vary, and the rule-based model depends on what the cluster looks like at the moment it is checked."
   echo "- The cases are simple: one broken app alone in its namespace. Real incidents are messier."
   echo "- \`dblock\` is simulated: the app only prints database-lock errors, there is no real database."
   echo "- The cases were written by the author of the tool."

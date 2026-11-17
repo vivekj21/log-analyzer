@@ -4,10 +4,10 @@ Short version: **in the default mode nothing leaves your cluster. In live mode, 
 
 ## Pick a mode
 
-| Mode | Where the data goes | Accuracy (7 test apps) |
+| Mode | Where the data goes | Accuracy |
 |---|---|---|
-| Rule-based (`--llm heuristic`, the Helm default) | Nowhere, even if a key is present. Everything stays on the machine or in the cluster. | 5 of 7. When unsure it says "cannot tell". |
-| Live (`--llm live`) | Masked log text goes to the model service you chose. If that is a server on your own machine (for example Ollama), it stays there. | Gemini: 7 of 7. Others: see the scorecard. |
+| Rule-based (`--llm heuristic`, the Helm default) | Nowhere, even if a key is present. Everything stays on the machine or in the cluster. | Lower than live. See the scorecard; it varies between runs. When unsure it says "cannot tell". |
+| Live (`--llm live`) | Masked log text goes to the model service you chose. If that is a server on your own machine (for example Ollama), it stays there. | See the scorecard for each model service. |
 
 The scorecard is in [accuracy/RESULTS.md](../accuracy/RESULTS.md). It is a small test, so read its limits before trusting the numbers.
 The safe default is less accurate on purpose. You switch to live mode yourself, knowing what leaves.

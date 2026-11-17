@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"k8s-log-analyzer/internal/protocol"
@@ -24,20 +25,20 @@ func (h *HeuristicModel) Analyze(ctx context.Context, invID, prompt string) (*An
 		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl)}, nil
 	}
 
-	// If a failing pod or performance symptom is detected but logs were not in discovery, request pod logs.
+	// Look into a suspicious pod. A pod is suspicious if the pod table shows it is not Running,
+	// not fully ready, or has restarted (this does not depend on lucky wording), or if the text
+	// mentions a failure word. Logs alone often miss the cause (an out-of-memory kill is recorded
+	// in the pod description, not in its logs), so read both.
 	lower := strings.ToLower(prompt)
-	if strings.Contains(lower, "crash") || strings.Contains(lower, "error") ||
-		strings.Contains(lower, "fail") || strings.Contains(lower, "timeout") ||
-		strings.Contains(lower, "latency") || strings.Contains(lower, "slow") ||
-		strings.Contains(lower, "5xx") || strings.Contains(lower, "504") {
-		if pod := pickPod(prompt); pod != "" {
-			return &AnalysisResult{
-				HasToolCalls: true,
-				FunctionCalls: []FunctionCallRequest{
-					{Name: "get_pod_logs", Args: map[string]string{"pod": pod, "tail_lines": "100"}},
-				},
-			}, nil
-		}
+	pod, suspicious := suspectPod(prompt)
+	if pod != "" && (suspicious || hasFailureWord(lower)) {
+		return &AnalysisResult{
+			HasToolCalls: true,
+			FunctionCalls: []FunctionCallRequest{
+				{Name: "describe_pod", Args: map[string]string{"pod": pod}},
+				{Name: "get_pod_logs", Args: map[string]string{"pod": pod, "tail_lines": "100"}},
+			},
+		}, nil
 	}
 
 	return &AnalysisResult{TextResponse: formatCannotDetermine("The rule-based model found no pod list or recognizable error text to work from.")}, nil
@@ -89,19 +90,49 @@ func formatCannotDetermine(why string) string {
 	return fmt.Sprintf("Root Cause: Cannot tell. %s\nConfidence: LOW\nEvidence:\n- No rule matched the data that was collected\n\nRecommendations:\n1. Check the pods and their logs by hand, or re-run with --llm live for a deeper look.\n\nROOT_CAUSE_CATEGORY: %s\n", why, CategoryCannotDetermine)
 }
 
-// podRowRegex matches a row of a "kubectl get pods" table: NAME READY STATUS.
-var podRowRegex = regexp.MustCompile(`(?m)^\s*([a-z0-9][-a-z0-9.]*)\s+\d+/\d+\s+(\S+)`)
+// failureWords are signs in free text that something is wrong.
+var failureWords = []string{"crash", "error", "fail", "timeout", "latency", "slow", "5xx", "504", "backoff", "killed", "evict"}
 
-// pickPod returns the first pod that is not Running/Completed, else the first pod, else "".
-func pickPod(text string) string {
+func hasFailureWord(lower string) bool {
+	for _, w := range failureWords {
+		if strings.Contains(lower, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// podRowRegex matches a row of a "kubectl get pods" table: NAME READY STATUS RESTARTS.
+// RESTARTS may look like "3" or "3 (45s ago)"; only the number is read.
+var podRowRegex = regexp.MustCompile(`(?m)^\s*([a-z0-9][-a-z0-9.]*)\s+(\d+)/(\d+)\s+(\S+)\s+(\d+)`)
+
+// suspectPod returns the pod most worth a closer look and whether the table itself says it is
+// unhealthy: not Running/Completed, not fully ready, or restarted at least once.
+// With no unhealthy pod it returns the first pod (suspicious=false); with no table, "".
+func suspectPod(text string) (pod string, suspicious bool) {
 	first := ""
+	best, bestRestarts := "", 0
 	for _, m := range podRowRegex.FindAllStringSubmatch(text, -1) {
 		if first == "" {
 			first = m[1]
 		}
-		if m[2] != "Running" && m[2] != "Completed" {
-			return m[1]
+		restarts, _ := strconv.Atoi(m[5])
+		bad := (m[4] != "Running" && m[4] != "Completed") || (m[4] == "Running" && m[2] != m[3])
+		if bad {
+			return m[1], true
+		}
+		if restarts > bestRestarts {
+			best, bestRestarts = m[1], restarts
 		}
 	}
-	return first
+	if best != "" {
+		return best, true
+	}
+	return first, false
+}
+
+// pickPod returns the pod suspectPod chooses ("" if there is no pod table).
+func pickPod(text string) string {
+	pod, _ := suspectPod(text)
+	return pod
 }

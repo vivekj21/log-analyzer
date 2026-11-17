@@ -14,11 +14,16 @@ It investigates an incident on its own, explains the root cause, and files the r
 
 ## What it does
 
-| Without it | With it |
-|---|---|
-| Someone reads thousands of log lines and runs `kubectl` by hand | The agents collect the evidence and decide what to check next |
-| The cause lives in one person's head | A root cause with a severity, P0 (critical) to P3 (low) |
-| The write-up happens later, or never | A markdown incident report, committed to Git |
+Point it at a broken Kubernetes namespace or a log file. It gathers evidence with read-only `kubectl` tools, names the likely root cause, rates its severity from P0 (critical) to P3 (low), and commits a markdown incident report to Git.
+
+## Why another tool?
+
+There are good tools already, such as K8sGPT and HolmesGPT. This one focuses on four things:
+
+1. **Safe by design.** Read-only, allowlisted tools, secrets masked, and prompt-injection attacks tested (so far on Gemini only).
+2. **You choose where your data goes.** The default keeps everything in your cluster. Live mode uses Gemini, any OpenAI-compatible service, or Claude. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
+3. **A published accuracy scorecard,** with its limits stated: [accuracy/RESULTS.md](accuracy/RESULTS.md).
+4. **A paper trail.** Every report is committed to Git.
 
 ## See it work
 
