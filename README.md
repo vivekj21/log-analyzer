@@ -14,16 +14,17 @@ It investigates an incident on its own, explains the root cause, and files the r
 
 ## What it does
 
-Point it at a broken Kubernetes namespace or a log file. It gathers evidence with read-only `kubectl` tools, names the likely root cause, rates its severity from P0 (critical) to P3 (low), and commits a markdown incident report to Git.
+This tool finds the root cause when your app on Kubernetes has errors or is failing. Its AI agents read your logs and cluster details, then tell you the most likely root cause and how urgent it is (P0 is the most urgent, P3 the least). A short report is saved in Git.
 
-## Why another tool?
+You can also give it just a log file. Without an AI service, built-in rules do a simpler version of the same job.
 
-There are good tools already, such as K8sGPT and HolmesGPT. This one focuses on four things:
+## Why trust it
 
-1. **Safe by design.** Read-only, allowlisted tools, secrets masked, and prompt-injection attacks tested (so far on Gemini only).
-2. **You choose where your data goes.** The default keeps everything in your cluster. Live mode uses Gemini, any OpenAI-compatible service, or Claude. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
-3. **A published accuracy scorecard,** with its limits stated: [accuracy/RESULTS.md](accuracy/RESULTS.md).
-4. **A paper trail.** Every report is committed to Git.
+- **It is made to be safe.**
+  - It cannot change your cluster. It only runs read-only commands from a short allowed list.
+  - Your data stays with you. Nothing is sent to an AI service unless you set one up, and you pick which one. Secrets and email addresses are masked first. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
+  - It was tested against prompt-injection tricks (so far on Gemini only).
+- **It publishes its score,** including where it fails: [accuracy/RESULTS.md](accuracy/RESULTS.md).
 
 ## See it work
 
@@ -133,7 +134,7 @@ go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model
 ```
 
 Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
-Status: Gemini is tested against the real service. The OpenAI-compatible and Anthropic clients are tested end to end against local fake servers; results from real services appear in [accuracy/RESULTS.md](accuracy/RESULTS.md) once someone runs them.
+Status: Gemini and Groq (model `openai/gpt-oss-120b`) are tested against the real services; see [accuracy/RESULTS.md](accuracy/RESULTS.md). The Anthropic client is so far tested only against a local fake server.
 
 **How accurate is it?** `make accuracy` runs 7 small broken apps with known causes through the rule-based model and through each model service you list (`ACC_MODELS`, see the top of `scripts/accuracy.sh`), then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini.
 

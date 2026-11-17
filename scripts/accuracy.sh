@@ -121,7 +121,7 @@ mark() { [ "$1" = "$2" ] && echo "✅ $1" || echo "❌ $1"; }
   HDR="| App | Known cause | Rule-based model |"; SEP="|---|---|---|"
   i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue
     IFS='|' read -r label prov model base keyenv <<< "$spec"
-    HDR="$HDR $label (\`$prov${model:+/$model}\`) |"; SEP="$SEP---|"; i=$((i+1))
+    HDR="$HDR $label (\`${model:-$prov}\`) |"; SEP="$SEP---|"; i=$((i+1))
   done
   echo "$HDR"; echo "$SEP"
   while IFS=$'\t' read -r -a F; do
