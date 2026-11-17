@@ -58,6 +58,22 @@ if env -u GEMINI_API_KEY "$T/analyzer" --provider openai --model m --base-url "h
 fi
 grep -q "Investigation Failed" "$T/unreachable.log" || fail "an unreachable model service must print 'Investigation Failed'"
 
+# Log-file mode with a model service: the answer must reach the report; a failed call must not pass silently.
+printf '2026-01-01T00:00:00Z ERROR connection refused: db:5432\n' > "$T/in.log"
+for P in openai anthropic; do
+  REPO="$T/lf-$P"; mkdir -p "$REPO"
+  if ! env -u GEMINI_API_KEY "$T/analyzer" --provider "$P" --base-url "http://127.0.0.1:$PORT/v1" --model fake-model --api-key-file "$T/key" \
+        --log-file "$T/in.log" --git-repo "$REPO" --timeout 2m >"$T/lf-$P.log" 2>&1; then fail "log-file mode, $P: analyzer exited with an error"; continue; fi
+  grep -rq --exclude-dir=.git "LLM Deep Diagnostics" "$REPO" || fail "log-file mode, $P: the report has no model section"
+  grep -rq --exclude-dir=.git "model service failed" "$REPO" && fail "log-file mode, $P: the report says the model failed, but it worked"
+done
+REPO="$T/lf-fail"; mkdir -p "$REPO"
+if env -u GEMINI_API_KEY "$T/analyzer" --provider openai --model m --base-url "http://127.0.0.1:9/v1" --api-key-file "$T/key" \
+     --log-file "$T/in.log" --git-repo "$REPO" --timeout 40s >"$T/lf-fail.log" 2>&1; then
+  fail "log-file mode: a failed model call must give a non-zero exit code"
+fi
+grep -rq --exclude-dir=.git "model service failed" "$REPO" || fail "log-file mode: the report must say the model part is missing when the model call failed"
+
 # --allow-http is the explicit way around the http rule: it must get past the check (heuristic mode, so nothing is sent).
 if ! env -u GEMINI_API_KEY "$T/analyzer" --llm heuristic --provider openai --model m --base-url http://10.0.0.5:8000/v1 --allow-http --api-key-file "$T/key" --namespace demo --dry-run --git-repo "$T/allow" >"$T/allow.log" 2>&1; then
   fail "--allow-http should let an http address through"; tail -3 "$T/allow.log"

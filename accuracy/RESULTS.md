@@ -19,4 +19,5 @@ A case is right only if the answer's category equals the known cause. `ERROR`/`N
 - 7 cases is a small sample, not a benchmark. One run each. Results can differ between runs: AI answers vary, and the rule-based model depends on what the cluster looks like at the moment it is checked.
 - The cases are simple: one broken app alone in its namespace. Real incidents are messier.
 - `dblock` is simulated: the app only prints database-lock errors, there is no real database.
+- `ERROR` can also mean the model service rate-limited the run or it ran out of time. That says nothing about how accurate the model is.
 - The cases were written by the author of the tool.

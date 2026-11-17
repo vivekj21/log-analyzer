@@ -105,7 +105,9 @@ func main() {
 		if *llmMode == "heuristic" || *llmMode == "replay" {
 			logCfg.APIKey = "" // these modes must never send anything to a model service, key or no key
 		}
-		handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logCfg)
+		if modelFailed := handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logCfg); modelFailed {
+			os.Exit(1) // the report was written, but the model analysis you asked for is missing
+		}
 		return
 	}
 
@@ -241,7 +243,9 @@ func envOr(name, def string) string {
 	return def
 }
 
-func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, cfg llm.ProviderConfig) {
+// handleDirectLogFile analyzes one log file. It returns true if a model service was asked to help and failed:
+// the report is still written (with the rule-based part and a note), but the caller must exit non-zero.
+func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, cfg llm.ProviderConfig) (modelFailed bool) {
 	log.Printf("[LogReader] Reading log file: %s", filePath)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -275,15 +279,35 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 		registry := toolbox.NewToolRegistry()
 		client, err := llm.NewLive(ctx, cfg, registry)
 		if err != nil {
-			log.Printf("[LLM] Could not start the model client, continuing without it: %v", err)
+			modelFailed = true
+			log.Printf("[LLM] Could not start the model client: %v", err)
+			reportMarkdown += modelFailureNote(err)
 		} else {
 			defer client.Close()
-			prompt := fmt.Sprintf("Analyze these application logs and provide deep root cause analysis and fix recommendations:\n\n```\n%s\n```", rawLogs)
+			prompt := fmt.Sprintf("Analyze these application logs and provide deep root cause analysis and fix recommendations. No tools are available here: answer from the log text only.\n\n```\n%s\n```", rawLogs)
 			if len(prompt) > 50000 {
 				prompt = prompt[:50000] + "\n[truncated]\n```"
 			}
 			res, err := client.Analyze(ctx, "direct-log", prompt)
-			if err == nil && res.TextResponse != "" {
+			// There is no cluster to look at in log-file mode. If the model asks for a tool anyway, tell it
+			// so (a few times at most) and let it answer from the text.
+			for round := 0; err == nil && res.HasToolCalls && round < 3; round++ {
+				var results []protocol.ToolCallResult
+				for _, fc := range res.FunctionCalls {
+					results = append(results, protocol.ToolCallResult{ToolName: fc.Name, Error: "tools are not available when analysing a log file; answer from the log text you were given"})
+				}
+				res, err = client.SendToolResults(ctx, "direct-log", results)
+			}
+			switch {
+			case err != nil:
+				modelFailed = true
+				log.Printf("[LLM] The model service failed: %v", err)
+				reportMarkdown += modelFailureNote(err)
+			case res.TextResponse == "":
+				modelFailed = true
+				log.Printf("[LLM] The model service returned no answer")
+				reportMarkdown += modelFailureNote(fmt.Errorf("it returned no answer"))
+			default:
 				reportMarkdown += "\n\n### LLM Deep Diagnostics\n" + res.TextResponse
 			}
 		}
@@ -327,4 +351,15 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 	} else {
 		fmt.Println("\n" + reportMarkdown)
 	}
+	return modelFailed
+}
+
+// modelFailureNote is added to the report when the model service was asked to help and failed,
+// so nobody mistakes a rule-based-only report for a model-checked one.
+func modelFailureNote(err error) string {
+	msg := err.Error()
+	if len(msg) > 200 {
+		msg = msg[:200] + "..."
+	}
+	return "\n\n### LLM Deep Diagnostics\nNot available: the model service failed (" + msg + "). The diagnosis above comes from the built-in rules only.\n"
 }

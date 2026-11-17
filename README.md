@@ -83,7 +83,7 @@ Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a
 go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
-Secrets and email addresses are masked before anything is saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine.
+Secrets and email addresses are masked before anything is saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine. If the model service fails, the report still contains the rule-based part, says the model part is missing, and the command exits with an error.
 
 The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, its own small Git repo. Change the place with `--git-repo`.
 

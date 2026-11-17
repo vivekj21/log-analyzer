@@ -5,6 +5,9 @@
 #
 #   WAIT=120        seconds to let the faults show up
 #   K3D_CLUSTER=x   use this existing cluster instead of a throwaway one
+#   ACC_TIMEOUT=4m  time allowed for one answer (a slow or rate-limited service may need more, e.g. 10m)
+#   ACC_SLOW="groq" labels (from ACC_MODELS) that get a pause of ACC_PAUSE seconds after each answer,
+#   ACC_PAUSE=60    so a service with a low tokens-per-minute limit can recover between cases
 #   ACC_MODELS      which model services to test, space separated, each written as
 #                   label|provider|model|base_url|NAME_OF_THE_ENV_VAR_HOLDING_THE_KEY
 #                   Example:
@@ -27,14 +30,15 @@ CASES=$(ls accuracy/cases/*.yaml | xargs -n1 basename | sed 's/\.yaml$//')
 OUT=$(mktemp -d)
 echo "== building analyzer"; go build -o "$OUT/analyzer" ./cmd/analyzer || exit 1
 
-# Try each model service once, cheaply, before the long run: a wrong key or model name should cost seconds, not 15 minutes.
+# Try each model service once, cheaply (one short log line, no cluster), before the long run: a wrong key or model name should cost seconds, not 15 minutes.
+printf '%s\n' "2026-01-01T00:00:00Z ERROR connection refused: db:5432" > "$OUT/preflight-input.log"
 GOOD_LABELS=(); GOOD_SPECS=()
 for spec in "${SPECS[@]:-}"; do
   [ -n "$spec" ] || continue
   IFS='|' read -r label prov model base keyenv <<< "$spec"
   args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
   echo "== test call to $label"
-  if LLM_API_KEY="${!keyenv}" "$OUT/analyzer" "${args[@]}" --namespace preflight --dry-run --git-repo "$(mktemp -d)" --timeout 90s >"$OUT/preflight-$label.log" 2>&1; then
+  if LLM_API_KEY="${!keyenv}" "$OUT/analyzer" "${args[@]}" --log-file "$OUT/preflight-input.log" --dry-run --git-repo "$(mktemp -d)" --timeout 90s >"$OUT/preflight-$label.log" 2>&1; then
     GOOD_LABELS+=("$label"); GOOD_SPECS+=("$spec")
   else
     echo "skipping $label: its test call failed. Last lines:"; tail -4 "$OUT/preflight-$label.log" | cut -c1-200
@@ -76,7 +80,7 @@ answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any)
   local repo f cat c=$1 col=$2; shift 2
   repo=$(mktemp -d)
   if ! "$OUT/analyzer" "$@" --namespace "la-acc-$c" --service "$c" --symptom "$SYMPTOM" \
-       --since 30m --git-repo "$repo" --timeout 4m >"$OUT/$c-$col.log" 2>&1; then echo ERROR; return; fi
+       --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col.log" 2>&1; then echo ERROR; return; fi
   f=$(find "$repo" -name '*.md' | head -1)
   [ -n "$f" ] || { echo NONE; return; }
   cat=$(sed -n 1,20p "$f" | grep -oE '"(OOM_KILLED|CRASHLOOP_BAD_CONFIG|IMAGE_PULL_FAIL|READINESS_PROBE_FAIL|DB_LOCK|NO_FAULT|CANNOT_DETERMINE)"' | head -1 | tr -d '"')
@@ -101,6 +105,7 @@ for c in $CASES; do
     A=$(LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
     [ "$A" = "$TRUTH" ] && OK[$i]=$((OK[$i]+1))
     ROW="$ROW"$'\t'"$A"
+    case " ${ACC_SLOW:-} " in *" $label "*) sleep "${ACC_PAUSE:-0}";; esac
     i=$((i+1))
   done
   printf '%s\n' "$ROW" >> "$R"
@@ -136,7 +141,8 @@ mark() { [ "$1" = "$2" ] && echo "✅ $1" || echo "❌ $1"; }
   echo "- $N cases is a small sample, not a benchmark. One run each. Results can differ between runs: AI answers vary, and the rule-based model depends on what the cluster looks like at the moment it is checked."
   echo "- The cases are simple: one broken app alone in its namespace. Real incidents are messier."
   echo "- \`dblock\` is simulated: the app only prints database-lock errors, there is no real database."
-  echo "- The cases were written by the author of the tool."
+  echo "- `ERROR` can also mean the model service rate-limited the run or it ran out of time. That says nothing about how accurate the model is.
+- The cases were written by the author of the tool."
 } > accuracy/RESULTS.md
 echo; cat accuracy/RESULTS.md
 echo; echo "logs saved in $OUT; table written to accuracy/RESULTS.md"
