@@ -1,24 +1,62 @@
 #!/usr/bin/env bash
 # The scorecard text. Sourced by accuracy.sh (real run) and by check-accuracy-report.sh (test with made-up results).
-# Needs these variables: R (results file, tab separated), SPECS (array of "label|provider|model|base_url|KEYENV"),
-# N (number of cases), REPEAT (runs per case), TOTAL (N * REPEAT), HEUR_OK (right runs of the rule-based model),
-# OK (array: right runs for each entry of SPECS). Optional: ACC_CASES (a partial run).
+# Needs these variables: R (results file, tab separated: app, known cause, rule-based answers, then one column per model;
+# several runs of one cell are separated by commas), SPECS (array of "label|provider|model|base_url|KEYENV"),
+# N (number of cases), REPEAT (runs per case), TOTAL (N * REPEAT). Optional: ACC_CASES (a partial run).
+#
+# Every run lands in one of four groups:
+#   right   the answer equals the known cause
+#   unsure  the answer is CANNOT_DETERMINE ("I cannot tell"): not right, but not a wrong diagnosis either
+#   wrong   any other category
+#   failed  ERROR or NONE: the run produced no answer
+
+classify() { # $1 = answer, $2 = known cause
+  case "$1" in
+    "$2") echo right;;
+    CANNOT_DETERMINE) echo unsure;;
+    ERROR|NONE) echo failed;;
+    *) echo wrong;;
+  esac
+}
 
 # One table cell. $1 = answers of all runs, comma separated; $2 = the known cause.
 cell() {
-  local IFS=','; local -a a=($1); local x right=0 n=${#a[@]} mark
-  for x in "${a[@]}"; do [ "$x" = "$2" ] && right=$((right+1)); done
+  local IFS=','; local -a a=($1); local x c right=0 unsure=0 wrong=0 failed=0 n=${#a[@]} sym txt=""
+  for x in "${a[@]}"; do
+    case "$(classify "$x" "$2")" in right) right=$((right+1));; unsure) unsure=$((unsure+1));; wrong) wrong=$((wrong+1));; failed) failed=$((failed+1));; esac
+  done
   if [ "$n" -eq 1 ]; then
-    if [ "$right" -eq 1 ]; then echo "✅ $1"; else echo "❌ $1"; fi
-    return
+    if [ "$right" -eq 1 ]; then sym="✅"; elif [ "$unsure" -eq 1 ]; then sym="❔"; elif [ "$wrong" -eq 1 ]; then sym="❌"; else sym="⛔"; fi
+    echo "$sym $1"; return
   fi
-  mark="⚠️"; [ "$right" -eq "$n" ] && mark="✅"; [ "$right" -eq 0 ] && mark="❌"
-  echo "$mark $right of $n: ${1//,/, }"
+  if [ "$right" -eq "$n" ]; then sym="✅"; elif [ "$wrong" -gt 0 ]; then sym="❌"; elif [ "$failed" -gt 0 ]; then sym="⛔"; else sym="❔"; fi
+  [ "$right" -gt 0 ] && txt="$right right"
+  [ "$unsure" -gt 0 ] && txt="${txt:+$txt, }$unsure unsure"
+  [ "$wrong" -gt 0 ] && txt="${txt:+$txt, }$wrong wrong"
+  [ "$failed" -gt 0 ] && txt="${txt:+$txt, }$failed failed"
+  echo "$sym $txt: ${1//,/, }"
+}
+
+# Summary for column $1 (0 = rule-based, 1.. = models), counted over every run of every case.
+column_summary() {
+  local col=$1 right=0 unsure=0 wrong=0 failed=0 line x
+  local -a F a
+  while IFS=$'\t' read -r -a F; do
+    local IFS=','; a=(${F[$((col+2))]}); IFS=$'\t'
+    for x in "${a[@]}"; do
+      case "$(classify "$x" "${F[1]}")" in right) right=$((right+1));; unsure) unsure=$((unsure+1));; wrong) wrong=$((wrong+1));; failed) failed=$((failed+1));; esac
+    done
+  done < "$R"
+  local extra=""
+  [ "$unsure" -gt 0 ] && extra="$unsure unsure"
+  [ "$wrong" -gt 0 ] && extra="${extra:+$extra, }$wrong wrong"
+  [ "$failed" -gt 0 ] && extra="${extra:+$extra, }$failed failed"
+  local unit=""; [ "${REPEAT:-1}" -gt 1 ] && unit=" runs"
+  echo "$right of $TOTAL$unit right${extra:+ ($extra)}"
 }
 
 write_report() {
-  local label prov model base keyenv HDR SEP line k i unit=""
-  [ "${REPEAT:-1}" -gt 1 ] && unit=" runs"
+  local label prov model base keyenv HDR SEP line k i
   echo "# Accuracy"
   echo
   if [ -n "${ACC_CASES:-}" ]; then
@@ -26,9 +64,9 @@ write_report() {
     echo
   fi
   echo "Run on $(date -u +%F) at commit \`$(git rev-parse --short HEAD 2>/dev/null || echo unknown)\`. Each case is a small broken app on a throwaway k3d cluster with a known cause."
-  echo "A run is right only if the answer's category equals the known cause. \`ERROR\`/\`NONE\` mean the run failed, and count as wrong."
+  echo "A run is right (✅) only if the answer's category equals the known cause. \`CANNOT_DETERMINE\` (❔ unsure) means the model said it could not tell: not right, but not a wrong diagnosis. Any other category is wrong (❌). \`ERROR\`/\`NONE\` (⛔) mean the run failed."
   if [ "${REPEAT:-1}" -gt 1 ]; then
-    echo "Each case was run ${REPEAT} times per model. A cell shows how many runs were right, then what each run answered."
+    echo "Each case was run ${REPEAT} times per model. A cell shows how the runs split, then what each run answered."
   fi
   echo
   HDR="| App | Known cause | Rule-based model |"; SEP="|---|---|---|"
@@ -43,9 +81,9 @@ write_report() {
     echo "$line"
   done < "$R"
   echo
-  local SUM="**Rule-based: $HEUR_OK of $TOTAL$unit.**"
-  i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue
-    IFS='|' read -r label _ <<< "$spec"; SUM="$SUM **$label: ${OK[$i]} of $TOTAL$unit.**"; i=$((i+1))
+  local SUM="**Rule-based: $(column_summary 0).**"
+  i=1; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue
+    IFS='|' read -r label _ <<< "$spec"; SUM="$SUM **$label: $(column_summary $i).**"; i=$((i+1))
   done
   [ ${#SPECS[@]} -eq 0 ] && SUM="$SUM No model service was tested (set ACC_MODELS or GEMINI_API_KEY)."
   echo "$SUM"

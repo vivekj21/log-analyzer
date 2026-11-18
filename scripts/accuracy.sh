@@ -92,8 +92,7 @@ answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any)
   echo "${cat:-NONE}"
 }
 
-R="$OUT/results.tsv"; : > "$R"; N=0; HEUR_OK=0
-OK=(); for _ in "${LABELS[@]:-}"; do OK+=(0); done
+R="$OUT/results.tsv"; : > "$R"; N=0
 for c in $CASES; do
   TRUTH=$(sed -n 's/^# expect: *//p' "accuracy/cases/$c.yaml" | head -1)
   SYMPTOM=$(sed -n 's/^# symptom: *//p' "accuracy/cases/$c.yaml" | head -1)
@@ -103,7 +102,6 @@ for c in $CASES; do
   HL=""; ML=(); for _ in "${LABELS[@]:-}"; do ML+=(""); done
   for ((RUN=1; RUN<=REPEAT; RUN++)); do
     H=$(answer "$c" rules --llm heuristic)
-    [ "$H" = "$TRUTH" ] && HEUR_OK=$((HEUR_OK+1))
     HL="${HL:+$HL,}$H"
     i=0
     for spec in "${SPECS[@]:-}"; do
@@ -111,7 +109,6 @@ for c in $CASES; do
       IFS='|' read -r label prov model base keyenv <<< "$spec"
       args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
       A=$(LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
-      [ "$A" = "$TRUTH" ] && OK[$i]=$((OK[$i]+1))
       ML[$i]="${ML[$i]:+${ML[$i]},}$A"
       case " ${ACC_SLOW:-} " in *" $label "*) sleep "${ACC_PAUSE:-0}";; esac
       i=$((i+1))
