@@ -4,6 +4,8 @@
 # and writes accuracy/RESULTS.md.   Run it with: make accuracy
 #
 #   WAIT=120        seconds to let the faults show up
+#   ACC_CASES="healthy oom"  run only these cases. The table is printed and NOT saved to accuracy/RESULTS.md.
+#   ACC_REPEAT=3    run each case this many times per model (to see how stable the answers are)
 #   K3D_CLUSTER=x   use this existing cluster instead of a throwaway one
 #   ACC_TIMEOUT=4m  time allowed for one answer (a slow or rate-limited service may need more, e.g. 10m)
 #   ACC_SLOW="groq" labels (from ACC_MODELS) that get a pause of ACC_PAUSE seconds after each answer,
@@ -15,6 +17,7 @@
 #                   If unset and GEMINI_API_KEY is set, only Gemini is tested. Leave model or base_url empty to use the default.
 set -u
 cd "$(dirname "$0")/.."
+. scripts/accuracy-report.sh
 export PATH="$HOME/.local/bin:$PATH"
 for c in kubectl k3d docker go; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
 WAIT="${WAIT:-120}"
@@ -26,7 +29,9 @@ for spec in ${ACC_MODELS:-}; do
   if [ -z "${!keyenv:-}" ]; then echo "skipping $label: environment variable $keyenv is not set"; continue; fi
   LABELS+=("$label"); SPECS+=("$spec")
 done
-CASES=$(ls accuracy/cases/*.yaml | xargs -n1 basename | sed 's/\.yaml$//')
+CASES="${ACC_CASES:-$(ls accuracy/cases/*.yaml | xargs -n1 basename | sed 's/\.yaml$//')}"
+for c in $CASES; do [ -f "accuracy/cases/$c.yaml" ] || { echo "no such case: $c (see accuracy/cases/)"; exit 1; }; done
+REPEAT="${ACC_REPEAT:-1}"; case "$REPEAT" in ''|*[!0-9]*|0) echo "ACC_REPEAT must be a whole number, 1 or more"; exit 1;; esac
 OUT=$(mktemp -d)
 echo "== building analyzer"; go build -o "$OUT/analyzer" ./cmd/analyzer || exit 1
 
@@ -80,7 +85,7 @@ answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any)
   local repo f cat c=$1 col=$2; shift 2
   repo=$(mktemp -d)
   if ! "$OUT/analyzer" "$@" --namespace "la-acc-$c" --service "$c" --symptom "$SYMPTOM" \
-       --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col.log" 2>&1; then echo ERROR; return; fi
+       --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col-$RUN.log" 2>&1; then echo ERROR; return; fi
   f=$(find "$repo" -name '*.md' | head -1)
   [ -n "$f" ] || { echo NONE; return; }
   cat=$(sed -n 1,20p "$f" | grep -oE '"(OOM_KILLED|CRASHLOOP_BAD_CONFIG|IMAGE_PULL_FAIL|READINESS_PROBE_FAIL|DB_LOCK|NO_FAULT|CANNOT_DETERMINE)"' | head -1 | tr -d '"')
@@ -93,56 +98,32 @@ for c in $CASES; do
   TRUTH=$(sed -n 's/^# expect: *//p' "accuracy/cases/$c.yaml" | head -1)
   SYMPTOM=$(sed -n 's/^# symptom: *//p' "accuracy/cases/$c.yaml" | head -1)
   SIM=""; grep -q '^# simulated:' "accuracy/cases/$c.yaml" && SIM=" (simulated)"
-  echo "== case $c (truth $TRUTH)"
-  H=$(answer "$c" rules --llm heuristic)
-  N=$((N+1)); [ "$H" = "$TRUTH" ] && HEUR_OK=$((HEUR_OK+1))
-  ROW="$c$SIM"$'\t'"$TRUTH"$'\t'"$H"
-  i=0
-  for spec in "${SPECS[@]:-}"; do
-    [ -n "$spec" ] || continue
-    IFS='|' read -r label prov model base keyenv <<< "$spec"
-    args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
-    A=$(LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
-    [ "$A" = "$TRUTH" ] && OK[$i]=$((OK[$i]+1))
-    ROW="$ROW"$'\t'"$A"
-    case " ${ACC_SLOW:-} " in *" $label "*) sleep "${ACC_PAUSE:-0}";; esac
-    i=$((i+1))
+  echo "== case $c (truth $TRUTH), $REPEAT run(s) per model"
+  N=$((N+1))
+  HL=""; ML=(); for _ in "${LABELS[@]:-}"; do ML+=(""); done
+  for ((RUN=1; RUN<=REPEAT; RUN++)); do
+    H=$(answer "$c" rules --llm heuristic)
+    [ "$H" = "$TRUTH" ] && HEUR_OK=$((HEUR_OK+1))
+    HL="${HL:+$HL,}$H"
+    i=0
+    for spec in "${SPECS[@]:-}"; do
+      [ -n "$spec" ] || continue
+      IFS='|' read -r label prov model base keyenv <<< "$spec"
+      args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
+      A=$(LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
+      [ "$A" = "$TRUTH" ] && OK[$i]=$((OK[$i]+1))
+      ML[$i]="${ML[$i]:+${ML[$i]},}$A"
+      case " ${ACC_SLOW:-} " in *" $label "*) sleep "${ACC_PAUSE:-0}";; esac
+      i=$((i+1))
+    done
   done
+  ROW="$c$SIM"$'\t'"$TRUTH"$'\t'"$HL"
+  i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue; ROW="$ROW"$'\t'"${ML[$i]}"; i=$((i+1)); done
   printf '%s\n' "$ROW" >> "$R"
 done
 
-mark() { [ "$1" = "$2" ] && echo "✅ $1" || echo "❌ $1"; }
-{
-  echo "# Accuracy"
-  echo
-  echo "Run on $(date -u +%F) at commit \`$(git rev-parse --short HEAD)\`. Each case is a small broken app on a throwaway k3d cluster with a known cause."
-  echo "A case is right only if the answer's category equals the known cause. \`ERROR\`/\`NONE\` mean the run failed, and count as wrong."
-  echo
-  HDR="| App | Known cause | Rule-based model |"; SEP="|---|---|---|"
-  i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue
-    IFS='|' read -r label prov model base keyenv <<< "$spec"
-    HDR="$HDR $label (\`${model:-$prov}\`) |"; SEP="$SEP---|"; i=$((i+1))
-  done
-  echo "$HDR"; echo "$SEP"
-  while IFS=$'\t' read -r -a F; do
-    line="| ${F[0]} | ${F[1]} | $(mark "${F[2]}" "${F[1]}") |"
-    for ((k=3; k<${#F[@]}; k++)); do line="$line $(mark "${F[$k]}" "${F[1]}") |"; done
-    echo "$line"
-  done < "$R"
-  echo
-  SUM="**Rule-based: $HEUR_OK of $N.**"
-  i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue
-    IFS='|' read -r label _ <<< "$spec"; SUM="$SUM **$label: ${OK[$i]} of $N.**"; i=$((i+1))
-  done
-  [ ${#SPECS[@]} -eq 0 ] && SUM="$SUM No model service was tested (set ACC_MODELS or GEMINI_API_KEY)."
-  echo "$SUM"
-  echo
-  echo "## What this does not show"
-  echo "- $N cases is a small sample, not a benchmark. One run each. Results can differ between runs: AI answers vary, and the rule-based model depends on what the cluster looks like at the moment it is checked."
-  echo "- The cases are simple: one broken app alone in its namespace. Real incidents are messier."
-  echo "- \`dblock\` is simulated: the app only prints database-lock errors, there is no real database."
-  echo "- `ERROR` can also mean the model service rate-limited the run or it ran out of time. That says nothing about how accurate the model is.
-- The cases were written by the author of the tool."
-} > accuracy/RESULTS.md
-echo; cat accuracy/RESULTS.md
-echo; echo "logs saved in $OUT; table written to accuracy/RESULTS.md"
+TOTAL=$((N*REPEAT))
+if [ -n "${ACC_CASES:-}" ]; then DEST="$OUT/partial-results.md"; else DEST=accuracy/RESULTS.md; fi
+write_report > "$DEST"
+echo; cat "$DEST"
+echo; echo "logs saved in $OUT; table written to $DEST"

@@ -10,7 +10,7 @@ It investigates an incident on its own, explains the root cause, and files the r
 <a href="https://github.com/vivekj21/log-analyzer/actions/workflows/e2e.yml"><img src="https://github.com/vivekj21/log-analyzer/actions/workflows/e2e.yml/badge.svg" alt="end-to-end status"/></a>
 </p>
 
-> It can look at your cluster. It has no way to change it.
+> **Built to be safe: read-only.** It can look at your cluster to diagnose problems, but it cannot change anything in it. Even if the AI is wrong or tricked, it can only run a short list of read-only commands.
 
 ## What it does
 
@@ -136,7 +136,7 @@ go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model
 Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
 Status: Gemini and Groq (model `openai/gpt-oss-120b`) are tested against the real services; see [accuracy/RESULTS.md](accuracy/RESULTS.md). The Anthropic client is so far tested only against a local fake server.
 
-**How accurate is it?** `make accuracy` runs 7 small broken apps with known causes through the rule-based model and through each model service you list (`ACC_MODELS`, see the top of `scripts/accuracy.sh`), then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini.
+**How accurate is it?** `make accuracy` runs small broken apps with known causes through the rule-based model and through each model service you list (`ACC_MODELS`, see the top of `scripts/accuracy.sh`), then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini. To run only some cases, or to repeat each one and see how stable the answers are, set `ACC_CASES` and `ACC_REPEAT` (also described at the top of `scripts/accuracy.sh`).
 
 If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
