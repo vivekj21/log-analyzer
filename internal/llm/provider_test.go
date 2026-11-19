@@ -199,6 +199,49 @@ func TestOpenAI_ClientErrorsAreNotRetriedAndNeverLeakTheKey(t *testing.T) {
 	}
 }
 
+const toolSlip = `{"error":{"message":"Tool call validation failed: attempted to call tool 'repo_browser.list_files' which was not in request.tools","type":"invalid_request_error"}}`
+
+func TestOpenAI_InventedToolNameIsRetriedThenSucceeds(t *testing.T) {
+	fastRetries(t)
+	f := newFake(t, func(n int, w http.ResponseWriter, r *http.Request) {
+		if n == 1 {
+			w.WriteHeader(400)
+			writeJSON(w, toolSlip)
+			return
+		}
+		writeJSON(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"total_tokens":1}}`)
+	})
+	c := newOpenAIClient(openAIConfig(f), toolbox.NewToolRegistry())
+	res, err := c.Analyze(context.Background(), "inv", "x")
+	if err != nil || res.TextResponse != "ok" || f.count() != 2 {
+		t.Fatalf("an invented tool name must be retried: %+v %v calls=%d", res, err, f.count())
+	}
+}
+
+func TestOpenAI_InventedToolNameKeepsFailingStopsAfterThree(t *testing.T) {
+	fastRetries(t)
+	f := newFake(t, func(n int, w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		writeJSON(w, toolSlip)
+	})
+	c := newOpenAIClient(openAIConfig(f), toolbox.NewToolRegistry())
+	if _, err := c.Analyze(context.Background(), "inv", "x"); err == nil || f.count() != 3 {
+		t.Fatalf("want 3 tries then an error: err=%v calls=%d", err, f.count())
+	}
+}
+
+func TestOpenAI_OtherBadRequestsAreNotRetried(t *testing.T) {
+	fastRetries(t)
+	f := newFake(t, func(n int, w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		writeJSON(w, `{"error":{"message":"model not found"}}`)
+	})
+	c := newOpenAIClient(openAIConfig(f), toolbox.NewToolRegistry())
+	if _, err := c.Analyze(context.Background(), "inv", "x"); err == nil || f.count() != 1 {
+		t.Fatalf("a plain 400 must fail at once: err=%v calls=%d", err, f.count())
+	}
+}
+
 func TestOpenAI_EmptyAnswerIsAnError(t *testing.T) {
 	f := newFake(t, func(n int, w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, `{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"length"}],"usage":{"total_tokens":1}}`)

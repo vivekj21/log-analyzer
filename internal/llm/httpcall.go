@@ -50,7 +50,7 @@ func excerpt(b []byte) string {
 }
 
 // post sends body as JSON and returns the response body of a 2xx answer.
-// Rate limits (429), overload (5xx, 529) and network hiccups are retried; everything else fails at once.
+// Rate limits (429), overload (5xx, 529) and network hiccups are retried; an invented tool name (HTTP 400) is retried twice; everything else fails at once.
 func (h *httpCaller) post(ctx context.Context, url string, headers map[string]string, body any) ([]byte, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -86,6 +86,10 @@ func (h *httpCaller) post(ctx context.Context, url string, headers map[string]st
 			} else {
 				lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, h.scrub(excerpt(data)))
 				wait, retry = retryAfterStatus(resp.StatusCode, resp.Header.Get("Retry-After"), attempt)
+				if !retry && resp.StatusCode == 400 && modelSlippedOnTools(data) {
+					// The model named a tool that does not exist. Asking again usually gives a valid call.
+					wait, retry = time.Duration(attempt)*retryScale, attempt < 3
+				}
 			}
 		}
 		if !retry || attempt == maxAttempts {
@@ -99,6 +103,13 @@ func (h *httpCaller) post(ctx context.Context, url string, headers map[string]st
 		}
 	}
 	return nil, lastErr
+}
+
+// modelSlippedOnTools spots the 400 that a service (Groq, for one) sends when the model calls a tool
+// that was not offered. It is a one-off slip of the model, not a mistake in our request.
+func modelSlippedOnTools(body []byte) bool {
+	s := strings.ToLower(string(body))
+	return strings.Contains(s, "tool call validation failed") || strings.Contains(s, "tool_use_failed")
 }
 
 // retryAfterStatus decides whether an HTTP status is worth retrying and how long to wait.

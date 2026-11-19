@@ -97,7 +97,7 @@ write_report() {
   cat <<'TEXT'
 - The cases are simple: one broken app alone in its namespace. Real incidents are messier.
 - `dblock` is simulated: the app only prints database-lock errors, there is no real database.
-- `ERROR` can also mean the model service rate-limited the run or it ran out of time. That says nothing about how accurate the model is.
+- `ERROR` can also mean the model service rate-limited the run or it ran out of time. That says nothing about how accurate the model is. A model can also fail by calling a tool that does not exist: the analyzer retries that twice, so an `ERROR` that remains means every try failed.
 - The cases were written by the author of the tool.
 TEXT
 }
