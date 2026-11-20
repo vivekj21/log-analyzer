@@ -1,0 +1,24 @@
+# expect: UNSCHEDULABLE
+# symptom: the new pod has been Pending for a long time
+# set: dev
+# service: analytics
+# verify: has_event 'FailedScheduling'
+# must-mention: (cpu|Insufficient|schedul)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: analytics, namespace: la-acc-unschedulable-cpu}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: analytics}}
+  template:
+    metadata: {labels: {app: analytics}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              sleep 3600
+          resources:
+            requests: {cpu: "64"}

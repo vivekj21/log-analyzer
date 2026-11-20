@@ -5,7 +5,14 @@
 #
 #   WAIT=120        seconds to let the faults show up
 #   ACC_CASES="healthy oom"  run only these cases. The table is printed and NOT saved to accuracy/RESULTS.md.
+#   ACC_SET=heldout run only the cases of one set: dev (used while tuning) or heldout (never tuned against).
+#                   Partial runs are printed, not saved to accuracy/RESULTS.md.
 #   ACC_REPEAT=3    run each case this many times per model (to see how stable the answers are)
+#   ACC_VERIFY_WAIT=180  seconds to keep checking that each fault really showed up (the "# verify:" line of the case).
+#                   A case whose fault does not show up is NOT scored (it is listed as "not scored"), so a broken test app never counts against a model.
+#   ACC_VERIFY=0    skip that check
+#   ACC_VALIDATE_ONLY=1  only start the apps and check that every fault shows up. No model is called, no key is needed. (make validate-cases)
+#   ACC_CASES_DIR   where the case files are (default accuracy/cases)
 #   K3D_CLUSTER=x   use this existing cluster instead of a throwaway one
 #   ACC_TIMEOUT=4m  time allowed for one answer (a slow or rate-limited service may need more, e.g. 10m)
 #   ACC_SLOW="groq" labels (from ACC_MODELS) that get a pause of ACC_PAUSE seconds after each answer,
@@ -20,9 +27,13 @@
 #                   If unset and GEMINI_API_KEY is set, only Gemini is tested. Leave model or base_url empty to use the default.
 set -u
 cd "$(dirname "$0")/.."
+CASES_DIR="${ACC_CASES_DIR:-accuracy/cases}"; export CASES_DIR
 . scripts/accuracy-report.sh
+. scripts/case-lib.sh
 export PATH="$HOME/.local/bin:$PATH"
-for c in kubectl k3d docker go; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
+VALIDATE_ONLY="${ACC_VALIDATE_ONLY:-0}"
+need="kubectl k3d docker go"; [ "$VALIDATE_ONLY" = 1 ] && need="kubectl k3d docker"
+for c in $need; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
 WAIT="${WAIT:-120}"
 if [ -z "${ACC_MODELS:-}" ] && [ -n "${GEMINI_API_KEY:-}" ]; then ACC_MODELS="gemini|gemini|${GEMINI_MODEL:-}||GEMINI_API_KEY"; fi
 LABELS=(); SPECS=()
@@ -32,13 +43,20 @@ for spec in ${ACC_MODELS:-}; do
   if [ -z "${!keyenv:-}" ]; then echo "skipping $label: environment variable $keyenv is not set"; continue; fi
   LABELS+=("$label"); SPECS+=("$spec")
 done
-CASES="${ACC_CASES:-$(ls accuracy/cases/*.yaml | xargs -n1 basename | sed 's/\.yaml$//')}"
-for c in $CASES; do [ -f "accuracy/cases/$c.yaml" ] || { echo "no such case: $c (see accuracy/cases/)"; exit 1; }; done
+CASES="${ACC_CASES:-$(ls "$CASES_DIR"/*.yaml | xargs -n1 basename | sed 's/\.yaml$//')}"
+for c in $CASES; do [ -f "$CASES_DIR/$c.yaml" ] || { echo "no such case: $c (see $CASES_DIR/)"; exit 1; }; done
+if [ -n "${ACC_SET:-}" ]; then
+  case "$ACC_SET" in dev|heldout) ;; *) echo "ACC_SET must be dev or heldout"; exit 1;; esac
+  PICK=""; for c in $CASES; do [ "$(case_meta "$c" set)" = "$ACC_SET" ] && PICK="$PICK $c"; done
+  CASES="${PICK# }"; [ -n "$CASES" ] || { echo "no cases in set $ACC_SET"; exit 1; }
+  ACC_CASES="$CASES"
+fi
 REPEAT="${ACC_REPEAT:-1}"; case "$REPEAT" in ''|*[!0-9]*|0) echo "ACC_REPEAT must be a whole number, 1 or more"; exit 1;; esac
 # Logs go to a permanent folder (not /tmp, which Ubuntu empties on reboot), so a failed run can still be read days later.
 LOGROOT="${ACC_LOGS_DIR:-$HOME/log-analyzer-accuracy-logs}"
 OUT="$LOGROOT/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$OUT" || exit 1
 : > "$OUT/errors.txt"
+if [ "$VALIDATE_ONLY" = 1 ]; then SPECS=(); LABELS=(); else
 echo "== building analyzer"; go build -o "$OUT/analyzer" ./cmd/analyzer || exit 1
 
 # Try each model service once, cheaply (one short log line, no cluster), before the long run: a wrong key or model name should cost seconds, not 15 minutes.
@@ -56,7 +74,9 @@ for spec in "${SPECS[@]:-}"; do
   fi
 done
 LABELS=("${GOOD_LABELS[@]:-}"); SPECS=("${GOOD_SPECS[@]:-}")
+fi
 
+ALL_CASES="$CASES"
 PREV=$(kubectl config current-context 2>/dev/null || true); CREATED=0
 if [ -n "${K3D_CLUSTER:-}" ]; then
   NAME="$K3D_CLUSTER"
@@ -69,7 +89,9 @@ else
   CREATED=1
 fi
 cleanup() {
-  for c in $CASES; do kubectl delete namespace "la-acc-$c" --wait=false >/dev/null 2>&1; done
+  for c in $ALL_CASES; do
+    for n in "la-acc-$c" $(extra_namespaces "$c"); do kubectl delete namespace "$n" --wait=false >/dev/null 2>&1; done
+  done
   [ -n "$PREV" ] && kubectl config use-context "$PREV" >/dev/null 2>&1
   [ "$CREATED" = 1 ] && { echo "== deleting $NAME"; k3d cluster delete "$NAME" >/dev/null 2>&1; }
 }
@@ -81,31 +103,68 @@ kubectl wait --for=condition=Ready node --all --timeout=120s || exit 1
 echo "== starting $(echo $CASES | wc -w) apps"
 for c in $CASES; do
   kubectl create namespace "la-acc-$c" >/dev/null || exit 1
-  kubectl apply -f "accuracy/cases/$c.yaml" >/dev/null || exit 1
+  kubectl apply -f "$CASES_DIR/$c.yaml" >/dev/null || exit 1
 done
 echo "== waiting ${WAIT}s for the faults to show up"; sleep "$WAIT"
 kubectl get pods -A 2>/dev/null | grep la-acc- || true
 
+# Check that each fault really showed up. A case whose fault is not visible is not scored: it would blame the model for a broken test app.
+VALID="$CASES"; SKIPPED=""
+if [ "${ACC_VERIFY:-1}" = 1 ]; then
+  echo "== checking that each fault really showed up (up to ${ACC_VERIFY_WAIT:-180}s in all)"
+  PENDING="$CASES"; VALID=""; END=$((SECONDS + ${ACC_VERIFY_WAIT:-180}))
+  while :; do
+    STILL=""
+    for c in $PENDING; do
+      verify_case "$c" 0; rc=$?
+      if [ "$rc" = 0 ]; then VALID="$VALID $c"; else STILL="$STILL $c"; fi
+    done
+    PENDING="${STILL# }"
+    [ -z "$PENDING" ] && break
+    [ "$SECONDS" -ge "$END" ] && break
+    sleep "${ACC_VERIFY_POLL:-5}"
+  done
+  VALID="${VALID# }"; SKIPPED="$PENDING"
+  for c in $VALID; do echo "   fault visible : $c"; done
+  for c in $SKIPPED; do
+    echo "   NOT VISIBLE   : $c  (will not be scored)"
+    echo "      verify line : $(case_meta "$c" verify)"
+    NS="la-acc-$c" k get pods 2>&1 | head -8 | sed 's/^/      /'
+    NS="la-acc-$c" k get events --no-headers 2>&1 | tail -6 | cut -c1-200 | sed 's/^/      /'
+  done
+fi
+if [ "$VALIDATE_ONLY" = 1 ]; then
+  echo; echo "$(echo $VALID | wc -w) of $(echo $CASES | wc -w) cases show their fault. Not visible: ${SKIPPED:-none}"
+  [ -z "$SKIPPED" ]; exit
+fi
+CASES="$VALID"; [ -n "$SKIPPED" ] && ACC_CASES="$CASES"
+[ -n "$CASES" ] || { echo "no case showed its fault: nothing to score"; exit 1; }
+
 # the category the report committed to Git (first 20 lines hold it), or ERROR / NONE
 answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any) is in LLM_API_KEY
-  local repo f cat c=$1 col=$2; shift 2
+  local repo f cat c=$1 col=$2 svc svcargs=(); shift 2
+  svc=$(case_meta "$c" service); svc="${svc:-$c}"; [ "$svc" = "-" ] || svcargs=(--service "$svc")
   repo=$(mktemp -d)
-  if ! "$OUT/analyzer" "$@" --namespace "la-acc-$c" --service "$c" --symptom "$SYMPTOM" \
+  if ! "$OUT/analyzer" "$@" --namespace "la-acc-$c" "${svcargs[@]}" --symptom "$SYMPTOM" \
        --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col-$RUN.log" 2>&1; then
     printf '%s\n' "$c $col run $RUN: $(grep -v '^[[:space:]]*$' "$OUT/$c-$col-$RUN.log" | tail -1 | cut -c1-220)" >> "$OUT/errors.txt"
     echo ERROR; return
   fi
   f=$(find "$repo" -name '*.md' | head -1)
   [ -n "$f" ] || { echo NONE; return; }
-  cat=$(sed -n 1,20p "$f" | grep -oE '"(OOM_KILLED|CRASHLOOP_BAD_CONFIG|IMAGE_PULL_FAIL|READINESS_PROBE_FAIL|DB_LOCK|NO_FAULT|CANNOT_DETERMINE)"' | head -1 | tr -d '"')
+  cat=$(sed -n 1,20p "$f" | grep -oE "\"($CATRE)\"" | head -1 | tr -d '"')
+  if [ "$cat" = "$TRUTH" ]; then printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$(explain_check "$c" "$f")" >> "$OUT/explain.tsv"; fi
   echo "${cat:-NONE}"
 }
 
-R="$OUT/results.tsv"; : > "$R"; N=0; FAILS=()
+# the categories come from the Go code, so there is one list only
+CATRE=$(grep -oE 'Category[A-Za-z]+ += "[A-Z_]+"' internal/llm/model.go | grep -oE '"[A-Z_]+"' | tr -d '"' | paste -sd'|')
+[ -n "$CATRE" ] || { echo "cannot read the categories from internal/llm/model.go"; exit 1; }
+R="$OUT/results.tsv"; E="$OUT/explain.tsv"; : > "$R"; : > "$E"; N=0; FAILS=()
 for c in $CASES; do
-  TRUTH=$(sed -n 's/^# expect: *//p' "accuracy/cases/$c.yaml" | head -1)
-  SYMPTOM=$(sed -n 's/^# symptom: *//p' "accuracy/cases/$c.yaml" | head -1)
-  SIM=""; grep -q '^# simulated:' "accuracy/cases/$c.yaml" && SIM=" (simulated)"
+  TRUTH=$(case_meta "$c" expect)
+  SYMPTOM=$(case_meta "$c" symptom)
+  SIM=""; grep -q '^# simulated:' "$CASES_DIR/$c.yaml" && SIM=" (simulated)"
   echo "== case $c (truth $TRUTH), $REPEAT run(s) per model"
   N=$((N+1))
   HL=""; ML=(); for _ in "${LABELS[@]:-}"; do ML+=(""); done

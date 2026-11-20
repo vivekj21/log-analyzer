@@ -1,5 +1,8 @@
 # expect: CRASHLOOP_BAD_CONFIG
 # symptom: pod in CrashLoopBackOff right after deploy
+# set: dev
+# verify: logs_have config 'DATABASE_URL' && [ "$(restarts config)" -ge 1 ]
+# must-mention: DATABASE_URL
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: config, namespace: la-acc-config}

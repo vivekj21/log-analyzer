@@ -7,7 +7,7 @@ CI that runs the same locally and on GitHub, Docker image and Helm chart (the la
 
 ## Next: make the core solid
 1. Release working state when an investigation ends, and check the policy and producer for races.
-2. Real-incident test set: first version done (7 labelled apps, `make accuracy`, scorecard in accuracy/RESULTS.md). Next: more and messier cases, including real past incidents.
+2. Real-incident test set: second version done (labelled apps with a dev and a held-out set, checked that each fault really shows up, explanation checklist; `make accuracy`, scorecard in accuracy/RESULTS.md, rules in accuracy/README.md). Next: cases taken from real past incidents, and tools that can show NetworkPolicies and metrics.
 
 ## Then: decide before building
 3. Where logs go and credentials: done. Decisions in docs/DATA-FLOW.md; the key comes from a file or the environment through a small provider interface (internal/creds), the chart mounts it as a file. Model providers: Gemini, OpenAI-compatible (Groq, OpenRouter, OpenAI, Ollama ...) and Anthropic are supported; accuracy on a real OpenAI-compatible service (Groq) is measured, see accuracy/RESULTS.md; the Anthropic client has not run against the real service yet, and prompt-injection results for both new providers are still to be measured. Still open: stronger masking of personal data beyond emails; direct secret-manager providers if people ask.

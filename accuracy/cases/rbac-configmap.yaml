@@ -1,0 +1,45 @@
+# expect: RBAC_DENIED
+# symptom: the settings sync job keeps failing
+# set: heldout
+# service: settings-sync
+# verify: logs_have settings-sync 'forbidden'
+# must-mention: (forbidden|RBAC|Role|permission)
+# must-mention: configmaps
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: sync-sa, namespace: la-acc-rbac-configmap}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: read-pods, namespace: la-acc-rbac-configmap}
+rules:
+  - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: read-pods, namespace: la-acc-rbac-configmap}
+subjects:
+  - {kind: ServiceAccount, name: sync-sa, namespace: la-acc-rbac-configmap}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: read-pods}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: settings-sync, namespace: la-acc-rbac-configmap}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: settings-sync}}
+  template:
+    metadata: {labels: {app: settings-sync}}
+    spec:
+      serviceAccountName: sync-sa
+      containers:
+        - name: app
+          image: curlimages/curl:8.10.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              SA=/var/run/secrets/kubernetes.io/serviceaccount
+              while true; do
+                echo "$(date +%T) ERROR: reading configmaps failed: $(curl -s --cacert $SA/ca.crt -H "Authorization: Bearer $(cat $SA/token)" https://kubernetes.default.svc/api/v1/namespaces/$(cat $SA/namespace)/configmaps | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
+                sleep 10
+              done

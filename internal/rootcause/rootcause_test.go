@@ -1,6 +1,10 @@
 package rootcause
 
-import "testing"
+import (
+	"testing"
+
+	"k8s-log-analyzer/internal/llm"
+)
 
 func TestCategory(t *testing.T) {
 	cases := map[string]string{
@@ -30,6 +34,14 @@ func TestSeverity(t *testing.T) {
 	for cat, want := range map[string]string{"OOM_KILLED": "P1", "IMAGE_PULL_FAIL": "P2", "NO_FAULT": "P3", "CANNOT_DETERMINE": "P2", "": "P2"} {
 		if got := Severity(cat); got != want {
 			t.Errorf("Severity(%q)=%q want %q", cat, got, want)
+		}
+	}
+}
+
+func TestEveryCategoryIsRecognised(t *testing.T) {
+	for _, c := range llm.AllCategories {
+		if got := Category("ROOT_CAUSE_CATEGORY: " + c); got != c {
+			t.Errorf("Category for %s = %q", c, got)
 		}
 	}
 }

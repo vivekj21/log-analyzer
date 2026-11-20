@@ -1,0 +1,25 @@
+# expect: CANNOT_DETERMINE
+# symptom: the exporter pod restarts every minute or so
+# set: heldout
+# service: exporter
+# verify: [ "$(restarts exporter)" -ge 1 ]
+# must-mention: (exit code 1|no logs|empty|restart|cannot|not enough)
+# must-not-claim: OOMKilled
+# note: the app exits with code 1 and prints nothing: the cause cannot be known from the cluster
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: exporter, namespace: la-acc-silent-crash}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: exporter}}
+  template:
+    metadata: {labels: {app: exporter}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              sleep 40
+              exit 1

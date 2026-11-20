@@ -1,0 +1,28 @@
+# expect: QUOTA_EXCEEDED
+# symptom: only 1 of 3 replicas is running after scaling up
+# set: dev
+# service: worker
+# verify: has_event 'exceeded quota'
+# must-mention: quota
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: pod-limit, namespace: la-acc-quota-pods}
+spec:
+  hard: {pods: "1"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: worker, namespace: la-acc-quota-pods}
+spec:
+  replicas: 3
+  selector: {matchLabels: {app: worker}}
+  template:
+    metadata: {labels: {app: worker}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do echo "INFO worker processing queue"; sleep 5; done

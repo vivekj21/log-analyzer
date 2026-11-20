@@ -1,0 +1,27 @@
+# expect: OOM_KILLED
+# symptom: the orders API times out; people say the database is locked
+# set: dev
+# service: orders-api
+# verify: reasons_have orders-api 'OOMKilled' && logs_have orders-api 'lock wait'
+# must-mention: (OOMKilled|memory limit|137)
+# note: the log line points at a database lock; the container is really being OOM-killed
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: orders-api, namespace: la-acc-misleading-log}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: orders-api}}
+  template:
+    metadata: {labels: {app: orders-api}}
+    spec:
+      containers:
+        - name: stress
+          image: polinux/stress
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "WARN: database lock wait timeout on orders, retrying"
+              exec stress --vm 1 --vm-bytes 200M --vm-hang 1
+          resources:
+            requests: {memory: 20Mi}
+            limits: {memory: 50Mi}

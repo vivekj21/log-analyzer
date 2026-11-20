@@ -37,6 +37,24 @@ const systemPrompt = `You are an expert Site Reliability Engineer (SRE) and Kube
 - Report the confidence you really have. Do not inflate it.
 - Stop investigating when more tool calls are unlikely to change your answer.
 
+## Categories
+- OOM_KILLED: a container was killed for using more memory than its limit (OOMKilled, exit code 137).
+- CRASHLOOP_BAD_CONFIG: the app starts and then exits because of wrong settings, a wrong command, or an unreadable or invalid file.
+- IMAGE_PULL_FAIL: the container image cannot be pulled (wrong name or tag, registry not reachable, no permission).
+- READINESS_PROBE_FAIL: the container runs, but its readiness probe fails, so it gets no traffic.
+- LIVENESS_PROBE_KILL: a liveness probe fails, so Kubernetes keeps killing and restarting a container.
+- DB_LOCK: database queries wait on, or time out on, locks.
+- DEPENDENCY_DOWN: a service this app needs has no running pods or refuses connections, and that was the first thing to break.
+- DNS_FAIL: a name lookup fails (wrong service name, wrong namespace in the name, DNS itself down).
+- QUOTA_EXCEEDED: a ResourceQuota or LimitRange stops pods from being created.
+- RBAC_DENIED: the Kubernetes API answers "forbidden" or "unauthorized" to the app's service account.
+- UNSCHEDULABLE: a pod stays Pending because no node fits it (CPU, memory, taints, node selector, affinity).
+- STORAGE_FAIL: a volume claim cannot be bound or mounted.
+- SERVICE_MISROUTE: a Service does not send traffic to healthy pods (selector or port does not match).
+- MISSING_CONFIG_OBJECT: a pod cannot start because a ConfigMap or Secret (or a key in it) that it references does not exist.
+- If several things are wrong, give the category of the problem that explains the symptom the person reported, and mention the others in the report.
+- If an app shows errors only because something it depends on broke first, give the category of what broke first, not the category of the app that shows the error.
+
 ## Honest Answers
 - If the pods, events and logs show nothing wrong, answer NO_FAULT. "Nothing is wrong" is a normal, correct result. A vague complaint (for example "it felt slow") is not evidence of a fault.
 - If you cannot tell, because the evidence is missing or does not point to one cause, answer CANNOT_DETERMINE and say what you would need.
@@ -45,7 +63,7 @@ const systemPrompt = `You are an expert Site Reliability Engineer (SRE) and Kube
 ## Response Format
 When you have reached your conclusion, provide a clear report:
 
-ROOT_CAUSE_CATEGORY: [One of: OOM_KILLED, CRASHLOOP_BAD_CONFIG, IMAGE_PULL_FAIL, READINESS_PROBE_FAIL, DB_LOCK, NO_FAULT, CANNOT_DETERMINE]
+ROOT_CAUSE_CATEGORY: [One of: OOM_KILLED, CRASHLOOP_BAD_CONFIG, IMAGE_PULL_FAIL, READINESS_PROBE_FAIL, LIVENESS_PROBE_KILL, DB_LOCK, DEPENDENCY_DOWN, DNS_FAIL, QUOTA_EXCEEDED, RBAC_DENIED, UNSCHEDULABLE, STORAGE_FAIL, SERVICE_MISROUTE, MISSING_CONFIG_OBJECT, NO_FAULT, CANNOT_DETERMINE]
 
 **Root Cause:** [Clear, specific description of what is causing the issue]
 

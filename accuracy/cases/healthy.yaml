@@ -1,5 +1,11 @@
 # expect: NO_FAULT
 # symptom: a user said the site felt slow earlier
+# set: dev
+# verify: logs_have healthy 'GET /health 200' && [ "$(restarts healthy)" = 0 ] && [ "$(phase healthy)" = Running ]
+# must-mention: (health|healthy|nothing)
+# must-not-claim: OOMKilled
+# must-not-claim: CrashLoopBackOff
+# must-not-claim: ImagePullBackOff
 # note: false alarm. The app is fine; the right answer is "no fault"
 apiVersion: apps/v1
 kind: Deployment

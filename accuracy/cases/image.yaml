@@ -1,5 +1,8 @@
 # expect: IMAGE_PULL_FAIL
 # symptom: pod stuck and never starts
+# set: dev
+# verify: reasons_have image 'ImagePullBackOff|ErrImagePull'
+# must-mention: registry.invalid
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: image, namespace: la-acc-image}

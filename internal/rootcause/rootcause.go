@@ -12,10 +12,7 @@ import (
 var (
 	categoryRe = regexp.MustCompile(`(?i)ROOT_CAUSE_CATEGORY[:\s*]*([A-Z_]+)`)
 	summaryRe  = regexp.MustCompile(`(?im)^[\s*#>_-]*root cause[\s*_]*:[\s*_]*(.+)$`)
-	known      = []string{
-		llm.CategoryOOMKilled, llm.CategoryCrashLoopBadConfig, llm.CategoryImagePullFail,
-		llm.CategoryReadinessProbeFail, llm.CategoryDBLock, llm.CategoryNoFault, llm.CategoryCannotDetermine,
-	}
+	known      = llm.AllCategories
 )
 
 // Category returns the root-cause category in text, or "" if none is found.

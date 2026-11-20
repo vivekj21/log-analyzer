@@ -1,5 +1,8 @@
 # expect: DB_LOCK
 # symptom: API requests are timing out
+# set: dev
+# verify: logs_have dblock 'Lock wait timeout'
+# must-mention: (lock|orders)
 # simulated: the app only prints database-lock errors; there is no real database
 apiVersion: apps/v1
 kind: Deployment

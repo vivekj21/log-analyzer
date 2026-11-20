@@ -1,0 +1,48 @@
+# expect: DEPENDENCY_DOWN
+# symptom: pages load slowly and some requests fail
+# set: dev
+# service: web
+# verify: logs_have web 'refused'
+# must-mention: redis
+# must-mention: (no endpoints|0 replicas|zero replicas|scaled|no running pods|no pods|replicas)
+# simulated: Redis is a Deployment scaled to 0 replicas (someone scaled it down); there is no real Redis running
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis, namespace: la-acc-redis-down}
+spec:
+  replicas: 0
+  selector: {matchLabels: {app: redis}}
+  template:
+    metadata: {labels: {app: redis}}
+    spec:
+      containers:
+        - name: app
+          image: redis:7-alpine
+          ports: [{containerPort: 6379}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: la-acc-redis-down}
+spec:
+  selector: {app: redis}
+  ports: [{port: 6379, targetPort: 6379}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: la-acc-redis-down}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date +%T) ERROR: cache lookup failed: $(wget -q -T 2 -O- http://redis:6379/ 2>&1 | head -c 150)"
+                sleep 5
+              done

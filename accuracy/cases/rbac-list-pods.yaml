@@ -1,0 +1,32 @@
+# expect: RBAC_DENIED
+# symptom: the watcher service shows no data
+# set: dev
+# service: watcher
+# verify: logs_have watcher 'forbidden'
+# must-mention: (forbidden|RBAC|Role|permission)
+# must-mention: app-sa
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: app-sa, namespace: la-acc-rbac-list-pods}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: watcher, namespace: la-acc-rbac-list-pods}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: watcher}}
+  template:
+    metadata: {labels: {app: watcher}}
+    spec:
+      serviceAccountName: app-sa
+      containers:
+        - name: app
+          image: curlimages/curl:8.10.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              SA=/var/run/secrets/kubernetes.io/serviceaccount
+              while true; do
+                echo "$(date +%T) ERROR: listing pods failed: $(curl -s --cacert $SA/ca.crt -H "Authorization: Bearer $(cat $SA/token)" https://kubernetes.default.svc/api/v1/namespaces/$(cat $SA/namespace)/pods | tr '\n' ' ' | tr -s ' ' | cut -c1-400)"
+                sleep 10
+              done

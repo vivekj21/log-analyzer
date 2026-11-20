@@ -1,0 +1,28 @@
+# expect: OOM_KILLED
+# symptom: the thumbnailer is fine for a while and then drops out, again and again
+# set: heldout
+# service: thumbnailer
+# verify: reasons_have thumbnailer 'OOMKilled'
+# must-mention: (OOM|memory)
+# note: looks healthy for the first 45 seconds of every run
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: thumbnailer, namespace: la-acc-flaky-oom}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: thumbnailer}}
+  template:
+    metadata: {labels: {app: thumbnailer}}
+    spec:
+      containers:
+        - name: stress
+          image: polinux/stress
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "worker started"
+              sleep 45
+              exec stress --vm 1 --vm-bytes 200M --vm-hang 1
+          resources:
+            requests: {memory: 20Mi}
+            limits: {memory: 50Mi}

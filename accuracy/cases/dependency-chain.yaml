@@ -1,0 +1,67 @@
+# expect: DEPENDENCY_DOWN
+# symptom: the website shows error pages to customers
+# set: heldout
+# service: frontend
+# verify: logs_have api 'refused' && logs_have frontend '502'
+# must-mention: redis
+# simulated: the frontend's 502 lines are printed text; the Redis outage itself (no endpoints behind the Service) is real
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis, namespace: la-acc-dependency-chain}
+spec:
+  replicas: 0
+  selector: {matchLabels: {app: redis}}
+  template:
+    metadata: {labels: {app: redis}}
+    spec:
+      containers:
+        - name: app
+          image: redis:7-alpine
+          ports: [{containerPort: 6379}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: la-acc-dependency-chain}
+spec:
+  selector: {app: redis}
+  ports: [{port: 6379, targetPort: 6379}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: la-acc-dependency-chain}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date +%T) ERROR: request failed, session store unavailable: $(wget -q -T 2 -O- http://redis:6379/ 2>&1 | head -c 150)"
+                sleep 5
+              done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: frontend, namespace: la-acc-dependency-chain}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: frontend}}
+  template:
+    metadata: {labels: {app: frontend}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date +%T) ERROR: upstream api returned 502 Bad Gateway"
+                sleep 4
+              done

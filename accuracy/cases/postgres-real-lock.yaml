@@ -1,0 +1,80 @@
+# expect: DB_LOCK
+# symptom: API requests that update orders hang and then fail
+# set: dev
+# service: api
+# verify: logs_have api 'lock timeout'
+# must-mention: lock
+# must-mention: orders
+# note: a real Postgres; one session holds an exclusive lock on the orders table
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres, namespace: la-acc-postgres-real-lock}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: app
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_PASSWORD, value: pw}
+          ports: [{containerPort: 5432}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: la-acc-postgres-real-lock}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: maintenance, namespace: la-acc-postgres-real-lock}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: maintenance}}
+  template:
+    metadata: {labels: {app: maintenance}}
+    spec:
+      containers:
+        - name: app
+          image: postgres:16-alpine
+          env:
+            - {name: PGHOST, value: postgres}
+            - {name: PGUSER, value: postgres}
+            - {name: PGPASSWORD, value: pw}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -q; do sleep 2; done
+              psql -q -c "create table if not exists orders(id int primary key, status text); insert into orders values (1, 'new') on conflict do nothing;"
+              echo "nightly maintenance job started"
+              psql -q -c "begin; lock table orders in access exclusive mode; select pg_sleep(86400);"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: la-acc-postgres-real-lock}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+        - name: app
+          image: postgres:16-alpine
+          env:
+            - {name: PGHOST, value: postgres}
+            - {name: PGUSER, value: postgres}
+            - {name: PGPASSWORD, value: pw}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -q; do sleep 2; done
+              sleep 20
+              while true; do
+                echo "$(date +%T) $(psql -q -t -c "set lock_timeout='3s'; update orders set status='paid' where id=1;" 2>&1 | head -c 200)"
+                sleep 5
+              done

@@ -1,0 +1,44 @@
+# expect: OOM_KILLED
+# symptom: the cart page keeps failing
+# set: dev
+# service: -
+# verify: reasons_have cart 'OOMKilled' && logs_have search 'FATAL'
+# must-mention: cart
+# must-mention: (OOM|memory)
+# must-mention: search
+# note: two real faults; the expected category is the one behind the reported symptom, the report should also mention the other
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: cart, namespace: la-acc-two-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cart}}
+  template:
+    metadata: {labels: {app: cart}}
+    spec:
+      containers:
+        - name: stress
+          image: polinux/stress
+          command: ["stress"]
+          args: ["--vm", "1", "--vm-bytes", "200M", "--vm-hang", "1"]
+          resources:
+            requests: {memory: 20Mi}
+            limits: {memory: 50Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: search, namespace: la-acc-two-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: search}}
+  template:
+    metadata: {labels: {app: search}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "FATAL: cannot open index /data/index.db: no such file" >&2
+              exit 1

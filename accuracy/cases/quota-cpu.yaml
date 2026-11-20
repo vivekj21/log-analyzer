@@ -1,0 +1,32 @@
+# expect: QUOTA_EXCEEDED
+# symptom: the deployment has no pods at all
+# set: heldout
+# service: reports
+# verify: has_event 'exceeded quota'
+# must-mention: quota
+# must-mention: cpu
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: compute, namespace: la-acc-quota-cpu}
+spec:
+  hard: {requests.cpu: 100m, limits.cpu: 200m}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: reports, namespace: la-acc-quota-cpu}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: reports}}
+  template:
+    metadata: {labels: {app: reports}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do echo "INFO generating report"; sleep 5; done
+          resources:
+            requests: {cpu: 300m}
+            limits: {cpu: 500m}

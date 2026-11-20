@@ -1,0 +1,26 @@
+# expect: CRASHLOOP_BAD_CONFIG
+# symptom: billing-worker keeps restarting
+# set: heldout
+# service: billing-worker
+# verify: logs_have billing-worker 'LISTEN_PORT' && [ "$(restarts billing-worker)" -ge 1 ]
+# must-mention: LISTEN_PORT
+# note: about 2300 log lines per start; the one useful line is in the middle, followed by harmless lines
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: billing-worker, namespace: la-acc-long-noisy-log}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: billing-worker}}
+  template:
+    metadata: {labels: {app: billing-worker}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              seq 1 2000 | while read i; do echo "INFO request $i handled in 3ms"; done
+              echo "ERROR: invalid configuration: LISTEN_PORT=\"eighty\" is not a number" >&2
+              seq 1 300 | while read i; do echo "INFO heartbeat $i ok"; done
+              exit 1

@@ -1,5 +1,8 @@
 # expect: CRASHLOOP_BAD_CONFIG
 # symptom: service restarts every few seconds since the last release
+# set: dev
+# verify: logs_have config-parse 'listen_prot' && [ "$(restarts config-parse)" -ge 1 ]
+# must-mention: listen_prot
 # note: different wording from the "config" case, so a fixed keyword list is less likely to match
 apiVersion: apps/v1
 kind: Deployment

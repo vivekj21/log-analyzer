@@ -1,0 +1,79 @@
+# expect: IMAGE_PULL_FAIL
+# symptom: customers cannot check out
+# set: dev
+# service: -
+# verify: reasons_have checkout 'ImagePullBackOff|ErrImagePull' && logs_have search 'retrying'
+# must-mention: checkout
+# note: four apps in one namespace; three print alarming but harmless lines
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: frontend, namespace: la-acc-red-herring}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: frontend}}
+  template:
+    metadata: {labels: {app: frontend}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              i=0
+              while true; do
+                i=$((i+1)); echo "INFO page served $i"
+                [ $((i%6)) = 0 ] && echo "WARN slow render 1400ms"
+                sleep 3
+              done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: cache, namespace: la-acc-red-herring}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cache}}
+  template:
+    metadata: {labels: {app: cache}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do echo "WARN cache miss ratio 41%, warming"; sleep 6; done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: search, namespace: la-acc-red-herring}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: search}}
+  template:
+    metadata: {labels: {app: search}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "ERROR: upstream timeout after 2s (attempt 1/3), retrying"
+                echo "INFO attempt 2/3 ok"
+                sleep 7
+              done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: checkout, namespace: la-acc-red-herring}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: checkout}}
+  template:
+    metadata: {labels: {app: checkout}}
+    spec:
+      containers:
+        - name: app
+          image: registry.invalid/shop/checkout:2.4.1

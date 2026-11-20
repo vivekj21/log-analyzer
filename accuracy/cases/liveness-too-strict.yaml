@@ -1,0 +1,31 @@
+# expect: LIVENESS_PROBE_KILL
+# symptom: the restart count of this pod keeps climbing
+# set: dev
+# service: slowstart
+# verify: has_event 'Liveness probe failed' && [ "$(restarts slowstart)" -ge 1 ]
+# must-mention: liveness
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: slowstart, namespace: la-acc-liveness-too-strict}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: slowstart}}
+  template:
+    metadata: {labels: {app: slowstart}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "starting, warming caches"
+              sleep 40
+              touch /tmp/ok
+              echo "ready"
+              sleep 3600
+          livenessProbe:
+            exec: {command: ["cat", "/tmp/ok"]}
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 1

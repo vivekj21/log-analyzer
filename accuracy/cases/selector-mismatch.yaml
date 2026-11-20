@@ -1,0 +1,50 @@
+# expect: SERVICE_MISROUTE
+# symptom: the UI cannot load stock levels
+# set: heldout
+# service: ui
+# verify: logs_have ui 'refused|can.t connect' && [ -z "$(k get endpoints inventory -o jsonpath='{.subsets}')" ]
+# must-mention: (selector|endpoints|label)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: inventory, namespace: la-acc-selector-mismatch}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: inventory}}
+  template:
+    metadata: {labels: {app: inventory}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "listening on 8080"
+              exec httpd -f -p 8080 -h /tmp
+---
+apiVersion: v1
+kind: Service
+metadata: {name: inventory, namespace: la-acc-selector-mismatch}
+spec:
+  selector: {app: inventory-api}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ui, namespace: la-acc-selector-mismatch}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ui}}
+  template:
+    metadata: {labels: {app: ui}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date +%T) ERROR: GET http://inventory:8080/stock failed: $(wget -q -T 3 -O- http://inventory:8080/stock 2>&1 | head -c 150)"
+                sleep 5
+              done

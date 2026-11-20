@@ -1,0 +1,55 @@
+# expect: DNS_FAIL
+# symptom: checkout fails when it tries to charge the card
+# set: heldout
+# service: checkout
+# verify: logs_have checkout 'bad address'
+# must-mention: billing
+# must-mention: namespace
+apiVersion: v1
+kind: Namespace
+metadata: {name: la-acc-dns-cross-namespace-billing}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: billing, namespace: la-acc-dns-cross-namespace-billing}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: billing}}
+  template:
+    metadata: {labels: {app: billing}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "listening on 8080"
+              exec httpd -f -p 8080 -h /tmp
+---
+apiVersion: v1
+kind: Service
+metadata: {name: billing, namespace: la-acc-dns-cross-namespace-billing}
+spec:
+  selector: {app: billing}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: checkout, namespace: la-acc-dns-cross-namespace}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: checkout}}
+  template:
+    metadata: {labels: {app: checkout}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date +%T) ERROR: charge failed: $(wget -q -T 3 -O- http://billing:8080/charge 2>&1 | head -c 150)"
+                sleep 5
+              done
