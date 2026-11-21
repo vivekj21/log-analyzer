@@ -131,6 +131,10 @@ if [ "${ACC_VERIFY:-1}" = 1 ]; then
     echo "      verify line : $(case_meta "$c" verify)"
     NS="la-acc-$c" k get pods 2>&1 | head -8 | sed 's/^/      /'
     NS="la-acc-$c" k get events --no-headers 2>&1 | tail -6 | cut -c1-200 | sed 's/^/      /'
+    for p in $(NS="la-acc-$c" k get pods -o name 2>/dev/null | head -4); do
+      echo "      -- $p last exit: $(NS="la-acc-$c" k get "$p" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason} code {.status.containerStatuses[0].lastState.terminated.exitCode}, now: {.status.containerStatuses[0].state.waiting.reason}' 2>&1)"
+      NS="la-acc-$c" k logs "$p" --all-containers --tail=4 2>&1 | cut -c1-160 | sed 's/^/         log: /'
+    done
   done
 fi
 if [ "$VALIDATE_ONLY" = 1 ]; then
