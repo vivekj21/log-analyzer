@@ -54,6 +54,12 @@ Comment lines at the top, then ordinary Kubernetes YAML. Every object lives in t
 2. **Category.** Right only if the answer's category equals `# expect:`. `CANNOT_DETERMINE` is "unsure": not right, not a wrong diagnosis.
 3. **Explanation.** For right answers only, the report must match every `# must-mention:` and no `# must-not-claim:`. This is a keyword check: it catches a report that never names the evidence.
 
+## Failed runs and kept answers
+
+- A failed run (⛔) is **not** a wrong answer. The scorecard says why: `rate_limit` (limit or quota reached), `network` (service not reachable; retried twice, after 20 s and 60 s, before it counts), `auth` (key refused), `timeout`, or `other`. After 3 failed runs in a row a model is skipped for the rest of the run, and the skipped runs say what the last reason was.
+- Answers are kept per commit, case, model and run number (in `~/log-analyzer-accuracy-logs/cells`). A later run at the same commit reuses them and only asks for what is missing. So a partial run is not wasted: run `ACC_SET=heldout make accuracy`, then `ACC_SET=dev make accuracy`, then `make accuracy`, and the last one only fills the gaps and writes the full `RESULTS.md`. Failed runs are never kept, and any new commit (or uncommitted change) starts fresh. `ACC_REUSE=0` turns this off.
+- Only a full run, with every case, is written to `accuracy/RESULTS.md`. A partial run is printed and saved in its log folder, so the committed scorecard always compares like with like.
+
 ## Commands
 
 - `make validate-cases`: starts every case and checks that its fault shows up. No key, no model, no cost. Run it after adding or changing a case.

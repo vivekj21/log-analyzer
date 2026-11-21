@@ -18,8 +18,14 @@
 #   ACC_SLOW="groq" labels (from ACC_MODELS) that get a pause of ACC_PAUSE seconds after each answer,
 #   ACC_PAUSE=60    so a service with a low tokens-per-minute limit can recover between cases (both are the default)
 #   ACC_LOGS_DIR    where each run keeps its logs (default ~/log-analyzer-accuracy-logs/<date-time>/)
-#   After 3 failed runs in a row, a model is not called again in this run (its remaining cells show ERROR,
-#   and errors.txt says "skipped"), so a used-up quota does not cost an hour.
+#   A failed run is labelled with its reason in errors.txt and on the scorecard: rate_limit (limit or quota reached), network
+#   (service not reachable), auth (key refused), timeout, other. A network failure is retried twice (after 20s, then 60s;
+#   ACC_RETRY_WAITS="20 60", use "" for none) before it counts. After 3 failed runs in a row, a model is not called again
+#   in this run (its remaining cells show ERROR and errors.txt says "skipped ... last reason: ..."), so a used-up quota does not cost an hour.
+#   Answers are kept (in ACC_CELLS_DIR, default <ACC_LOGS_DIR>/cells) per commit, case, model and run number. A later run at the
+#   same commit reuses them and only asks for what is missing: a partial run is not wasted, and a full run after a
+#   held-out run only does the rest. Failed runs are never kept. Not used when the working tree has uncommitted changes.
+#   ACC_REUSE=0     do not reuse or keep answers
 #   ACC_MODELS      which model services to test, space separated, each written as
 #                   label|provider|model|base_url|NAME_OF_THE_ENV_VAR_HOLDING_THE_KEY
 #                   Example:
@@ -55,7 +61,25 @@ REPEAT="${ACC_REPEAT:-1}"; case "$REPEAT" in ''|*[!0-9]*|0) echo "ACC_REPEAT mus
 # Logs go to a permanent folder (not /tmp, which Ubuntu empties on reboot), so a failed run can still be read days later.
 LOGROOT="${ACC_LOGS_DIR:-$HOME/log-analyzer-accuracy-logs}"
 OUT="$LOGROOT/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$OUT" || exit 1
-: > "$OUT/errors.txt"
+: > "$OUT/errors.txt"; : > "$OUT/reused.txt"
+# Answers are kept per commit so a partial run is not wasted. ACC_FORCE_COMMIT is only for the tests of this script.
+CELLS="${ACC_CELLS_DIR:-$LOGROOT/cells}"; REUSE=0; COMMIT=""
+if [ "${ACC_REUSE:-1}" = 1 ] && [ "$VALIDATE_ONLY" != 1 ]; then
+  if [ -n "${ACC_FORCE_COMMIT:-}" ]; then COMMIT="$ACC_FORCE_COMMIT"; REUSE=1
+  elif [ -z "$(git status --porcelain 2>/dev/null)" ] && COMMIT=$(git rev-parse HEAD 2>/dev/null); then REUSE=1
+  else echo "== note: the working tree has uncommitted changes, so earlier answers are not reused and these are not kept"; fi
+  [ "$REUSE" = 1 ] && mkdir -p "$CELLS"
+fi
+cell_key() { printf '%s' "$COMMIT/$(sha1sum < "$CASES_DIR/$1.yaml" | cut -c1-12)/$2" | sha1sum | cut -c1-20; }
+# Why a run failed, from the last line of its log only (earlier lines are the investigation, which may mention quotas or timeouts)
+failure_class() {
+  local t; t=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
+  if   grep -Eiq '429|rate.?limit|quota|RESOURCE_EXHAUSTED|tokens per (day|minute)|too many requests' <<< "$t"; then echo rate_limit
+  elif grep -Eiq 'dial tcp|lookup [^ ]+|no such host|connection (refused|reset)|i/o timeout|TLS handshake|network is unreachable|temporary failure in name resolution|unexpected EOF' <<< "$t"; then echo network
+  elif grep -Eiq '\b(401|403)\b|unauthorized|api key|permission denied|invalid.*key' <<< "$t"; then echo auth
+  elif grep -Eiq 'deadline exceeded|timed out|timeout' <<< "$t"; then echo timeout
+  else echo other; fi
+}
 if [ "$VALIDATE_ONLY" = 1 ]; then SPECS=(); LABELS=(); else
 echo "== building analyzer"; go build -o "$OUT/analyzer" ./cmd/analyzer || exit 1
 
@@ -145,26 +169,37 @@ CASES="$VALID"; [ -n "$SKIPPED" ] && ACC_CASES="$CASES"
 [ -n "$CASES" ] || { echo "no case showed its fault: nothing to score"; exit 1; }
 
 # the category the report committed to Git (first 20 lines hold it), or ERROR / NONE
-answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any) is in LLM_API_KEY
-  local repo f cat c=$1 col=$2 svc svcargs=(); shift 2
-  svc=$(case_meta "$c" service); svc="${svc:-$c}"; [ "$svc" = "-" ] || svcargs=(--service "$svc")
-  repo=$(mktemp -d)
-  if ! "$OUT/analyzer" "$@" --namespace "la-acc-$c" "${svcargs[@]}" --symptom "$SYMPTOM" \
-       --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col-$RUN.log" 2>&1; then
-    printf '%s\n' "$c $col run $RUN: $(grep -v '^[[:space:]]*$' "$OUT/$c-$col-$RUN.log" | tail -1 | cut -c1-220)" >> "$OUT/errors.txt"
-    echo ERROR; return
+answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any) is in LLM_API_KEY; CELL (if set) is where the answer is kept
+  local repo f cat ex tries c=$1 col=$2 svc svcargs=() attempt=0 class waits=(${ACC_RETRY_WAITS-20 60}); shift 2
+  if [ -n "${CELL:-}" ] && [ -s "$CELL" ]; then   # asked before at this commit: reuse
+    cat=$(sed -n 1p "$CELL"); ex=$(sed -n 2p "$CELL")
+    [ "$ex" = "-" ] || printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$ex" >> "$OUT/explain.tsv"
+    echo "$col" >> "$OUT/reused.txt"; echo "$cat"; return
   fi
+  svc=$(case_meta "$c" service); svc="${svc:-$c}"; [ "$svc" = "-" ] || svcargs=(--service "$svc")
+  while :; do
+    repo=$(mktemp -d)
+    if "$OUT/analyzer" "$@" --namespace "la-acc-$c" "${svcargs[@]}" --symptom "$SYMPTOM" \
+         --since 30m --git-repo "$repo" --timeout "${ACC_TIMEOUT:-4m}" >"$OUT/$c-$col-$RUN.log" 2>&1; then break; fi
+    class=$(failure_class "$OUT/$c-$col-$RUN.log")
+    if [ "$class" = network ] && [ "$attempt" -lt "${#waits[@]}" ]; then sleep "${waits[$attempt]}"; attempt=$((attempt+1)); continue; fi
+    tries=""; [ "$attempt" -gt 0 ] && tries=" (after $attempt retries)"
+    printf '%s\n' "$c $col run $RUN: [$class]$tries $(grep -v '^[[:space:]]*$' "$OUT/$c-$col-$RUN.log" | tail -1 | cut -c1-400)" >> "$OUT/errors.txt"
+    echo ERROR; return
+  done
   f=$(find "$repo" -name '*.md' | head -1)
   [ -n "$f" ] || { echo NONE; return; }
   cat=$(sed -n 1,20p "$f" | grep -oE "\"($CATRE)\"" | head -1 | tr -d '"')
-  if [ "$cat" = "$TRUTH" ]; then printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$(explain_check "$c" "$f")" >> "$OUT/explain.tsv"; fi
+  ex=-
+  if [ "$cat" = "$TRUTH" ]; then ex=$(explain_check "$c" "$f"); printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$ex" >> "$OUT/explain.tsv"; fi
+  if [ -n "${CELL:-}" ] && [ -n "$cat" ]; then mkdir -p "$(dirname "$CELL")"; printf '%s\n%s\n' "$cat" "$ex" > "$CELL"; cp "$f" "$CELL.md"; fi
   echo "${cat:-NONE}"
 }
 
 # the categories come from the Go code, so there is one list only
 CATRE=$(grep -oE 'Category[A-Za-z]+ += "[A-Z_]+"' internal/llm/model.go | grep -oE '"[A-Z_]+"' | tr -d '"' | paste -sd'|')
 [ -n "$CATRE" ] || { echo "cannot read the categories from internal/llm/model.go"; exit 1; }
-R="$OUT/results.tsv"; E="$OUT/explain.tsv"; : > "$R"; : > "$E"; N=0; FAILS=()
+R="$OUT/results.tsv"; E="$OUT/explain.tsv"; : > "$R"; : > "$E"; N=0; FAILS=(); LASTCLASS=()
 for c in $CASES; do
   TRUTH=$(case_meta "$c" expect)
   SYMPTOM=$(case_meta "$c" symptom)
@@ -173,19 +208,24 @@ for c in $CASES; do
   N=$((N+1))
   HL=""; ML=(); for _ in "${LABELS[@]:-}"; do ML+=(""); done
   for ((RUN=1; RUN<=REPEAT; RUN++)); do
-    H=$(answer "$c" rules --llm heuristic)
+    H=$(CELL="" answer "$c" rules --llm heuristic)
     HL="${HL:+$HL,}$H"
     i=0
     for spec in "${SPECS[@]:-}"; do
       [ -n "$spec" ] || continue
       IFS='|' read -r label prov model base keyenv <<< "$spec"
       args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
+      CELL=""; [ "$REUSE" = 1 ] && CELL="$CELLS/$(cell_key "$c" "$label|$prov|$model|$base")-$RUN"
       if [ "${FAILS[$i]:-0}" -ge 3 ]; then
-        A=ERROR; echo "$c $label run $RUN: skipped (3 failures in a row)" >> "$OUT/errors.txt"
+        A=ERROR; echo "$c $label run $RUN: skipped (3 failures in a row; last reason: ${LASTCLASS[$i]:-other})" >> "$OUT/errors.txt"
       else
-        A=$(LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
-        case "$A" in ERROR|NONE) FAILS[$i]=$(( ${FAILS[$i]:-0} + 1 ));; *) FAILS[$i]=0;; esac
-        case " ${ACC_SLOW-groq} " in *" $label "*) sleep "${ACC_PAUSE:-60}";; esac
+        kept=0; [ -n "$CELL" ] && [ -s "$CELL" ] && kept=1
+        A=$(CELL="$CELL" LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
+        case "$A" in
+          ERROR|NONE) FAILS[$i]=$(( ${FAILS[$i]:-0} + 1 )); LASTCLASS[$i]=$(tail -1 "$OUT/errors.txt" | sed -n 's/^[^[]*\[\([a-z_]*\)\].*/\1/p');;
+          *) FAILS[$i]=0;;
+        esac
+        [ "$kept" = 1 ] || case " ${ACC_SLOW-groq} " in *" $label "*) sleep "${ACC_PAUSE:-60}";; esac
       fi
       ML[$i]="${ML[$i]:+${ML[$i]},}$A"
       i=$((i+1))
@@ -198,8 +238,14 @@ done
 
 TOTAL=$((N*REPEAT))
 if [ -n "${ACC_CASES:-}" ]; then DEST="$OUT/partial-results.md"; else DEST=accuracy/RESULTS.md; fi
+ERRFILE="$OUT/errors.txt"
+REUSED_NOTE=""
+if [ -s "$OUT/reused.txt" ]; then
+  REUSED_NOTE="Answers reused from earlier runs at this same commit (not asked again): $(sort "$OUT/reused.txt" | uniq -c | awk '{printf "%s%s %s", (NR>1?", ":""), $2, $1}')."
+fi
 write_report > "$DEST"
 echo; cat "$DEST"
 echo
-if [ -s "$OUT/errors.txt" ]; then echo "== why runs failed (last log line of each):"; cut -c1-240 "$OUT/errors.txt"; echo; fi
+if [ -s "$OUT/errors.txt" ]; then echo "== why runs failed (last log line of each):"; cut -c1-300 "$OUT/errors.txt"; echo; fi
+[ "$REUSE" = 1 ] && echo "answers kept in $CELLS: a later run at this same commit reuses them and only asks for what is missing"
 echo "logs saved in $OUT; table written to $DEST"

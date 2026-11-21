@@ -4,6 +4,7 @@
 # several runs of one cell are separated by commas), SPECS (array of "label|provider|model|base_url|KEYENV"),
 # N (number of cases), REPEAT (runs per case), TOTAL (N * REPEAT). Optional: ACC_CASES (a partial run),
 # E (explanation checks, tab separated: case, column name, run, ok|missing: ...|claimed: ...), SKIPPED (cases whose fault never showed up),
+# ERRFILE (errors.txt of the run), REUSED_NOTE (a sentence about reused answers),
 # CASES_DIR (where the case files are; each has a "# set: dev|heldout" line).
 #
 # Every run lands in one of four groups:
@@ -89,6 +90,7 @@ write_report() {
   if [ "${REPEAT:-1}" -gt 1 ]; then
     echo "Each case was run ${REPEAT} times per model. A cell shows how the runs split, then what each run answered."
   fi
+  [ -n "${REUSED_NOTE:-}" ] && { echo "$REUSED_NOTE"; echo; }
   if [ -n "${SKIPPED:-}" ]; then
     echo "**Not scored: ${SKIPPED}.** The fault did not show up in the cluster in time (see the \`# verify:\` line of the case), so these say nothing about any model."
     echo
@@ -128,6 +130,20 @@ write_report() {
       [ "$col" = rules ] && col="Rule-based"
       echo "- $col, $c, run $run: $st"
     done < "$E"
+    echo
+  fi
+  if [ -s "${ERRFILE:-/nonexistent}" ]; then
+    echo "## Why runs failed"
+    echo "A failed run (⛔) is not a wrong answer. **rate_limit**: the service's limit or quota was reached. **network**: the service could not be reached (retried twice before giving up). **auth**: the key was refused. **timeout**: no answer in time. **other**: see the log. A run that was *skipped* was not tried, because the model had just failed 3 times in a row."
+    awk '{
+      label=$2; if (label=="rules") label="Rule-based"
+      if (match($0, /last reason: [a-z_]+\)/))   print label "\t2\t" substr($0, RSTART+13, RLENGTH-14)
+      else if (match($0, /: \[[a-z_]+\]/))       print label "\t1\t" substr($0, RSTART+3, RLENGTH-4)
+    }' "$ERRFILE" | sort | uniq -c | awk '{
+      label=$2; kind=$3; reason=$4; n=$1
+      txt = (kind==1) ? n " " reason : n " skipped after " reason
+      if (label!=last) { if (last!="") print "- " last ": " line; line=txt; last=label } else line=line "; " txt
+    } END { if (last!="") print "- " last ": " line }'
     echo
   fi
   echo "## What this does not show"
