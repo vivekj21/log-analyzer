@@ -255,6 +255,18 @@ func toolSchemas(tools []*toolbox.ToolDefinition) []toolSchema {
 			if len(p.AllowedValues) > 0 {
 				prop["enum"] = p.AllowedValues
 			}
+			if !p.Required {
+				// Models often send null for an option they do not use. A strict service (Groq, for one) rejects the whole
+				// call if the schema only allows a string, so an optional option may also be null. argsToStrings drops it.
+				prop["type"] = []string{"string", "null"}
+				if len(p.AllowedValues) > 0 {
+					vals := make([]any, 0, len(p.AllowedValues)+1)
+					for _, v := range p.AllowedValues {
+						vals = append(vals, v)
+					}
+					prop["enum"] = append(vals, nil)
+				}
+			}
 			props[p.Name] = prop
 			if p.Required {
 				required = append(required, p.Name)
@@ -270,10 +282,24 @@ func toolSchemas(tools []*toolbox.ToolDefinition) []toolSchema {
 }
 
 // argsToStrings turns decoded JSON arguments into the string map the rest of the program uses.
+// A null means "not given" and is left out (it must never become the text "<nil>"). A whole number is written
+// without an exponent (200, not 2e+02), because the tool checks demand plain digits.
 func argsToStrings(in map[string]any) map[string]string {
+	return ArgsToStrings(in)
+}
+
+// ArgsToStrings is argsToStrings for the other providers in this package.
+func ArgsToStrings(in map[string]any) map[string]string {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
-		out[k] = fmt.Sprintf("%v", v)
+		switch x := v.(type) {
+		case nil:
+			continue
+		case float64:
+			out[k] = strconv.FormatFloat(x, 'f', -1, 64) // 200, not 2e+02
+		default:
+			out[k] = fmt.Sprintf("%v", v)
+		}
 	}
 	return out
 }

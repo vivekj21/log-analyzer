@@ -395,3 +395,72 @@ func TestNewLiveBuildsEachProvider(t *testing.T) {
 		t.Errorf("a missing model must be refused before any call is made")
 	}
 }
+
+// A model that does not use an optional option often sends null for it. The schema must allow that (a strict
+// service rejects the whole call otherwise), and the null must be dropped, never turned into the text "<nil>".
+func TestToolSchemas_OptionalOptionsMayBeNullAndRequiredOnesMayNot(t *testing.T) {
+	reg := toolbox.NewToolRegistry()
+	var found bool
+	for _, s := range toolSchemas(reg.AllTools()) {
+		props := s.Parameters["properties"].(map[string]any)
+		required := map[string]bool{}
+		if r, ok := s.Parameters["required"].([]string); ok {
+			for _, n := range r {
+				required[n] = true
+			}
+		}
+		for name, raw := range props {
+			typ := raw.(map[string]any)["type"]
+			if required[name] {
+				if typ != "string" {
+					t.Errorf("%s.%s is required and must be a plain string, got %v", s.Name, name, typ)
+				}
+				continue
+			}
+			arr, ok := typ.([]string)
+			if !ok || len(arr) != 2 || arr[0] != "string" || arr[1] != "null" {
+				t.Errorf("%s.%s is optional and must allow null, got %v", s.Name, name, typ)
+			}
+			if enum, ok := raw.(map[string]any)["enum"].([]any); ok && enum[len(enum)-1] != nil {
+				t.Errorf("%s.%s has an enum and must list null in it", s.Name, name)
+			}
+			if s.Name == "get_pod_logs" && name == "container" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("get_pod_logs.container not checked: tool renamed?")
+	}
+}
+
+func TestArgsToStrings_NullIsDroppedAndWholeNumbersHaveNoExponent(t *testing.T) {
+	got := ArgsToStrings(map[string]any{"namespace": "prod", "container": nil, "tail_lines": float64(200), "big": float64(1000000), "ratio": 0.5, "previous": true})
+	want := map[string]string{"namespace": "prod", "tail_lines": "200", "big": "1000000", "ratio": "0.5", "previous": "true"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
+	}
+	if _, has := got["container"]; has {
+		t.Error("a null argument must be left out")
+	}
+}
+
+func TestOpenAI_NullOptionalArgumentIsLeftOut(t *testing.T) {
+	f := newFake(t, func(n int, w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, `{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"get_pod_logs","arguments":"{\"namespace\":\"prod\",\"pod\":\"api-1\",\"container\":null,\"tail_lines\":200}"}}]},"finish_reason":"tool_calls"}],"usage":{"total_tokens":10}}`)
+	})
+	c := newOpenAIClient(openAIConfig(f), toolbox.NewToolRegistry())
+	res, err := c.Analyze(context.Background(), "inv", "x")
+	if err != nil || len(res.FunctionCalls) != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	args := res.FunctionCalls[0].Args
+	if _, has := args["container"]; has || args["tail_lines"] != "200" {
+		t.Errorf("args = %v: container must be absent and tail_lines must be 200", args)
+	}
+}

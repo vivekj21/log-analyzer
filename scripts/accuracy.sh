@@ -22,9 +22,10 @@
 #   (service not reachable), auth (key refused), timeout, other. A network failure is retried twice (after 20s, then 60s;
 #   ACC_RETRY_WAITS="20 60", use "" for none) before it counts. After 3 failed runs in a row, a model is not called again
 #   in this run (its remaining cells show ERROR and errors.txt says "skipped ... last reason: ..."), so a used-up quota does not cost an hour.
-#   Answers are kept (in ACC_CELLS_DIR, default <ACC_LOGS_DIR>/cells) per commit, case, model and run number. A later run at the
-#   same commit reuses them and only asks for what is missing: a partial run is not wasted, and a full run after a
-#   held-out run only does the rest. Failed runs are never kept. Not used when the working tree has uncommitted changes.
+#   Answers are kept (in ACC_CELLS_DIR, default <ACC_LOGS_DIR>/cells) per version of the Go code (internal/, cmd/, go.mod,
+#   go.sum), case file, model and run number. A later run of the same code reuses them and only asks for what is missing: a partial run is not wasted, and a full run after a
+#   held-out run only does the rest. A change to scripts, docs or the Makefile keeps them; any change to the Go code (which includes
+#   the prompt and the tool definitions) starts fresh. Failed runs are never kept. Not used when the Go code has uncommitted changes.
 #   ACC_REUSE=0     do not reuse or keep answers
 #   ACC_MODELS      which model services to test, space separated, each written as
 #                   label|provider|model|base_url|NAME_OF_THE_ENV_VAR_HOLDING_THE_KEY
@@ -62,15 +63,16 @@ REPEAT="${ACC_REPEAT:-1}"; case "$REPEAT" in ''|*[!0-9]*|0) echo "ACC_REPEAT mus
 LOGROOT="${ACC_LOGS_DIR:-$HOME/log-analyzer-accuracy-logs}"
 OUT="$LOGROOT/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$OUT" || exit 1
 : > "$OUT/errors.txt"; : > "$OUT/reused.txt"
-# Answers are kept per commit so a partial run is not wasted. ACC_FORCE_COMMIT is only for the tests of this script.
-CELLS="${ACC_CELLS_DIR:-$LOGROOT/cells}"; REUSE=0; COMMIT=""
+# Answers are kept per version of the Go code so a partial run is not wasted. ACC_FORCE_CODE is only for the tests of this script.
+CELLS="${ACC_CELLS_DIR:-$LOGROOT/cells}"; REUSE=0; CODEKEY=""
 if [ "${ACC_REUSE:-1}" = 1 ] && [ "$VALIDATE_ONLY" != 1 ]; then
-  if [ -n "${ACC_FORCE_COMMIT:-}" ]; then COMMIT="$ACC_FORCE_COMMIT"; REUSE=1
-  elif [ -z "$(git status --porcelain 2>/dev/null)" ] && COMMIT=$(git rev-parse HEAD 2>/dev/null); then REUSE=1
-  else echo "== note: the working tree has uncommitted changes, so earlier answers are not reused and these are not kept"; fi
+  if [ -n "${ACC_FORCE_CODE:-}" ]; then CODEKEY="$ACC_FORCE_CODE"; REUSE=1
+  elif [ -z "$(git status --porcelain -- internal cmd go.mod go.sum 2>/dev/null)" ] \
+       && CODEKEY=$(git rev-parse HEAD:internal HEAD:cmd HEAD:go.mod HEAD:go.sum 2>/dev/null | sha1sum | cut -c1-16) && [ -n "$CODEKEY" ]; then REUSE=1
+  else echo "== note: the Go code has uncommitted changes (or this is not a git checkout), so earlier answers are not reused and these are not kept"; fi
   [ "$REUSE" = 1 ] && mkdir -p "$CELLS"
 fi
-cell_key() { printf '%s' "$COMMIT/$(sha1sum < "$CASES_DIR/$1.yaml" | cut -c1-12)/$2" | sha1sum | cut -c1-20; }
+cell_key() { printf '%s' "$CODEKEY/$(sha1sum < "$CASES_DIR/$1.yaml" | cut -c1-12)/$2" | sha1sum | cut -c1-20; }
 # Why a run failed, from the last line of its log only (earlier lines are the investigation, which may mention quotas or timeouts)
 failure_class() {
   local t; t=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
@@ -241,11 +243,11 @@ if [ -n "${ACC_CASES:-}" ]; then DEST="$OUT/partial-results.md"; else DEST=accur
 ERRFILE="$OUT/errors.txt"
 REUSED_NOTE=""
 if [ -s "$OUT/reused.txt" ]; then
-  REUSED_NOTE="Answers reused from earlier runs at this same commit (not asked again): $(sort "$OUT/reused.txt" | uniq -c | awk '{printf "%s%s %s", (NR>1?", ":""), $2, $1}')."
+  REUSED_NOTE="Answers reused from earlier runs of the same code (not asked again): $(sort "$OUT/reused.txt" | uniq -c | awk '{printf "%s%s %s", (NR>1?", ":""), $2, $1}')."
 fi
 write_report > "$DEST"
 echo; cat "$DEST"
 echo
 if [ -s "$OUT/errors.txt" ]; then echo "== why runs failed (last log line of each):"; cut -c1-300 "$OUT/errors.txt"; echo; fi
-[ "$REUSE" = 1 ] && echo "answers kept in $CELLS: a later run at this same commit reuses them and only asks for what is missing"
+[ "$REUSE" = 1 ] && echo "answers kept in $CELLS: a later run of the same code reuses them and only asks for what is missing"
 echo "logs saved in $OUT; table written to $DEST"

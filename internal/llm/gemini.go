@@ -236,10 +236,7 @@ func processResponse(resp *genai.GenerateContentResponse) (*AnalysisResult, erro
 			if part.FunctionCall != nil {
 				fc := FunctionCallRequest{
 					Name: part.FunctionCall.Name,
-					Args: make(map[string]string),
-				}
-				for k, val := range part.FunctionCall.Args {
-					fc.Args[k] = fmt.Sprintf("%v", val)
+					Args: ArgsToStrings(part.FunctionCall.Args),
 				}
 				result.FunctionCalls = append(result.FunctionCalls, fc)
 				result.HasToolCalls = true

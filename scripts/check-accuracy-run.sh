@@ -6,7 +6,7 @@
 #  (3) ACC_SET picks only the cases of one set, and a case with "# service: -" is analysed without --service;
 #  (4) the explanation checklist is applied to right answers only;
 #  (6) a network failure is retried and then counts only if every try fails; every failure is labelled with its reason;
-#  (7) answers are kept per commit: a second run asks only for what is missing, and a failed run is never kept;
+#  (7) answers are kept per version of the Go code (also in a real git checkout: scripts and docs may change, the Go code may not): a second run asks only for what is missing, and a failed run is never kept;
 #  (5) ACC_VALIDATE_ONLY=1 checks the faults without calling any model and fails if one is not visible.
 set -eu
 cd "$(dirname "$0")/.."
@@ -99,7 +99,7 @@ grep -q -- '- dwn: 3 network$' "$T/out6.txt" || { grep -n 'Why runs' -A4 "$T/out
 grep -q 'after 2 retries' "$T/logs/"*/errors.txt || fail "errors.txt does not say how often it retried"
 
 # (7) answers are kept per commit
-reuse() { run env ACC_REUSE=1 ACC_FORCE_COMMIT="$1" ACC_CELLS_DIR="$T/cells" ACC_CASES="a1 a2" ACC_RETRY_WAITS="" "${@:2}"; }
+reuse() { run env ACC_REUSE=1 ACC_FORCE_CODE="$1" ACC_CELLS_DIR="$T/cells" ACC_CASES="a1 a2" ACC_RETRY_WAITS="" "${@:2}"; }
 : > "$CALLS"; rm -rf "$FLAKY_DIR"; mkdir "$FLAKY_DIR"
 reuse c1 ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" > "$T/out7.txt" 2>&1 || fail "first reuse run failed"
 grep -q "^| a[12] .*⛔" "$T/out7.txt" || fail "with no retries the first call of each case should fail"
@@ -111,7 +111,7 @@ grep -q "^| a[12] .*⛔" "$T/out8.txt" && fail "the second run should succeed (t
 : > "$CALLS"
 reuse c1 ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" > "$T/out9.txt" 2>&1 || fail "third reuse run failed"
 [ "$(grep -c -- '--provider' "$CALLS")" = 0 ] || fail "third run asked the model again although every answer was kept"
-grep -q "Answers reused from earlier runs at this same commit (not asked again): flk 2" "$T/out9.txt" || { grep -n reused "$T/out9.txt"; fail "the scorecard does not say that answers were reused"; }
+grep -q "Answers reused from earlier runs of the same code (not asked again): flk 2" "$T/out9.txt" || { grep -n reused "$T/out9.txt"; fail "the scorecard does not say that answers were reused"; }
 : > "$CALLS"; reuse c2 ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" > "$T/out10.txt" 2>&1 || fail "new commit run failed"
 [ "$(grep -c -- '--provider flaky' "$CALLS")" -ge 2 ] || fail "a new commit must not reuse answers"
 # a report without a category is not kept; reused answers do not cost the pause that slow services get
@@ -122,4 +122,22 @@ reuse c3 ACC_MODELS="nc|nocat|m|http://x|FAKE_KEY" > /dev/null 2>&1 || fail "noc
 START=$SECONDS
 reuse c1 ACC_SLOW=flk ACC_PAUSE=5 ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" > /dev/null 2>&1 || fail "pause run failed"
 [ $((SECONDS - START)) -lt 5 ] || fail "answers that were reused still waited for the pause"
-echo "check-accuracy-run: OK (logs kept, failure reasons, network retry, answers kept per commit, failing model skipped, invisible faults not scored, sets and service flag, explanation checks, validate-only)"
+
+# (8) the same in a real git checkout: a change to scripts or docs keeps the answers, a change to the Go code starts fresh
+G="$T/gitrepo"; mkdir -p "$G/scripts" "$G/internal/llm" "$G/cmd" "$G/docs"
+cp scripts/accuracy.sh scripts/accuracy-report.sh scripts/case-lib.sh "$G/scripts/"; cp internal/llm/model.go "$G/internal/llm/"
+echo "package main" > "$G/cmd/main.go"; echo "module x" > "$G/go.mod"; : > "$G/go.sum"; echo hi > "$G/docs/a.md"
+( cd "$G" && git init -q . && git config user.email t@t && git config user.name t && git add -A && git commit -qm first )
+grun() { PATH="$T/bin:$PATH" K3D_CLUSTER=x WAIT=0 ACC_PAUSE=0 ACC_VERIFY_WAIT=1 ACC_VERIFY_POLL=1 ACC_CASES_DIR="$T/cases" ACC_LOGS_DIR="$T/glogs" \
+  ACC_RETRY_WAITS="" FAKE_KEY=k ACC_CASES="a1" ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" bash "$G/scripts/accuracy.sh" > "$T/gout.txt" 2>&1; }
+asked() { grep -c -- '--provider flaky' "$CALLS"; }
+rm -rf "$FLAKY_DIR"; mkdir "$FLAKY_DIR"
+: > "$CALLS"; grun || fail "git run 1"; grun || fail "git run 2"       # run 1 fails once (nothing kept), run 2 succeeds and keeps the answer
+: > "$CALLS"; grun || fail "git run 3"; [ "$(asked)" = 0 ] || fail "answers were not reused in a git checkout"
+( cd "$G" && echo more >> docs/a.md && echo "# x" >> scripts/accuracy-report.sh && git commit -qam "docs and scripts only" )
+: > "$CALLS"; grun || fail "git run 4"; [ "$(asked)" = 0 ] || fail "a change to docs and scripts must keep the answers"
+( cd "$G" && echo "// changed" >> internal/llm/model.go && git commit -qam "go code" )
+: > "$CALLS"; rm -rf "$FLAKY_DIR"; mkdir "$FLAKY_DIR"; grun || fail "git run 5"; [ "$(asked)" -ge 1 ] || fail "a change to the Go code must not reuse answers"
+( cd "$G" && echo "// uncommitted" >> internal/llm/model.go )
+: > "$CALLS"; grun || fail "git run 6"; grep -q "Go code has uncommitted changes" "$T/gout.txt" || fail "an uncommitted change to the Go code must switch reuse off and say so"
+echo "check-accuracy-run: OK (logs kept, failure reasons, network retry, answers kept per version of the code, failing model skipped, invisible faults not scored, sets and service flag, explanation checks, validate-only)"
