@@ -58,7 +58,7 @@ Comment lines at the top, then ordinary Kubernetes YAML. Every object lives in t
 
 - A failed run (⛔) is **not** a wrong answer. The scorecard says why: `rate_limit` (limit or quota reached), `network` (service not reachable; retried twice, after 20 s and 60 s, before it counts), `auth` (key refused), `timeout`, or `other`. After 3 failed runs in a row a model is skipped for the rest of the run, and the skipped runs say what the last reason was.
 - Answers are kept per version of the Go code (`internal/`, `cmd/`, `go.mod`, `go.sum`, which include the prompt and the tool definitions), case file, model and run number, in `~/log-analyzer-accuracy-logs/cells`. A later run of the same code reuses them and only asks for what is missing. So a partial run is not wasted: run `ACC_SET=heldout make accuracy`, then `ACC_SET=dev make accuracy`, then `make accuracy`, and the last one only fills the gaps and writes the full `RESULTS.md`. A change to scripts, docs or the Makefile keeps the answers. A change to the Go code, a changed case file, or uncommitted Go changes starts fresh. Failed runs are never kept. `ACC_REUSE=0` turns this off.
-- Only a full run, with every case, is written to `accuracy/RESULTS.md`. A partial run is printed and saved in its log folder, so the committed scorecard always compares like with like.
+- Only a full run, with every case, is written to `accuracy/RESULTS.md`. A partial run is printed and saved in its log folder, so the committed scorecard always compares like with like. After a full run, `make commit-results` commits and pushes only `accuracy/RESULTS.md`, and refuses if the run was partial, if any case was not scored, or if any cell failed (⛔).
 
 ## Commands
 

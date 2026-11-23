@@ -1,7 +1,7 @@
 # expect: OOM_KILLED
 # symptom: pod keeps restarting and being killed
 # set: dev
-# verify: reasons_have oom 'OOMKilled'
+# verify: reasons_have oom 'OOMKilled' || exit_code_is oom 137
 # must-mention: (OOM|memory)
 apiVersion: apps/v1
 kind: Deployment

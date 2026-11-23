@@ -50,6 +50,17 @@ for f in "$DIR"/*.yaml; do
   [ -z "$(grep -n 'la-acc-' "$f" | grep -v "la-acc-$c" | head -1)" ] || fail "$c: mentions another case's namespace"
 done
 
+# 2b. the exit_code_is helper really reads exit codes (kubectl is faked: it prints what jsonpath would)
+( kubectl() { printf '137 \n'; }; NS=x
+  exit_code_is oom 137 || exit 1
+  exit_code_is oom 13 && exit 1      # a part of a number is not a match
+  exit_code_is oom 1 && exit 1
+  kubectl() { printf ' 2\n'; }      # the current state (second field) counts too
+  exit_code_is oom 2 || exit 1
+  kubectl() { printf ' \n'; }       # no exit code at all
+  exit_code_is oom 137 && exit 1
+  exit 0 ) || fail "exit_code_is in scripts/case-lib.sh does not match exit codes correctly"
+
 # 3. coverage
 for c in $CODE; do grep -q " $c:" <<< " $ALLEXPECT" || fail "category $c has no case"; done
 [ "$held" -ge 1 ] || fail "no held-out case"

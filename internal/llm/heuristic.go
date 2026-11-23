@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"k8s-log-analyzer/internal/protocol"
 )
@@ -14,15 +15,21 @@ import (
 var podNameRegex = regexp.MustCompile(`([a-zA-Z0-9][-a-zA-Z0-9]+-[a-z0-9]+-[a-z0-9]+)`)
 
 // HeuristicModel is a rule-based, non-AI implementation of Model using strings.Contains.
-type HeuristicModel struct{}
+// It remembers, per investigation, what the pod table of the first prompt showed, so that the
+// later tool output (which has no pod table) is judged against the same facts.
+type HeuristicModel struct {
+	mu     sync.Mutex
+	tables map[string]podTableState
+}
 
 func NewHeuristicModel() *HeuristicModel {
-	return &HeuristicModel{}
+	return &HeuristicModel{tables: map[string]podTableState{}}
 }
 
 func (h *HeuristicModel) Analyze(ctx context.Context, invID, prompt string) (*AnalysisResult, error) {
-	if cat, expl, ok := evaluateRules(prompt); ok {
-		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl)}, nil
+	tbl := tableState(prompt)
+	if cat, expl, ev, ok := matchRules(prompt, tbl); ok {
+		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl, ev)}, nil
 	}
 
 	// Look into a suspicious pod. A pod is suspicious if the pod table shows it is not Running,
@@ -32,6 +39,12 @@ func (h *HeuristicModel) Analyze(ctx context.Context, invID, prompt string) (*An
 	lower := strings.ToLower(prompt)
 	pod, suspicious := suspectPod(prompt)
 	if pod != "" && (suspicious || hasFailureWord(lower)) {
+		h.mu.Lock()
+		if h.tables == nil {
+			h.tables = map[string]podTableState{}
+		}
+		h.tables[invID] = tbl
+		h.mu.Unlock()
 		return &AnalysisResult{
 			HasToolCalls: true,
 			FunctionCalls: []FunctionCallRequest{
@@ -53,35 +66,108 @@ func (h *HeuristicModel) SendToolResults(ctx context.Context, invID string, r []
 		combined.WriteString("\n")
 	}
 
-	if cat, expl, ok := evaluateRules(combined.String()); ok {
-		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl)}, nil
+	h.mu.Lock()
+	tbl, known := h.tables[invID]
+	delete(h.tables, invID)
+	h.mu.Unlock()
+	if !known {
+		tbl = tableState(combined.String())
+	}
+	if cat, expl, ev, ok := matchRules(combined.String(), tbl); ok {
+		return &AnalysisResult{TextResponse: formatHeuristicReport(cat, expl, ev)}, nil
 	}
 
 	return &AnalysisResult{TextResponse: formatCannotDetermine("The rule-based model read the data but matched none of its known error patterns.")}, nil
 }
 
-func evaluateRules(text string) (string, string, bool) {
-	lower := strings.ToLower(text)
-	switch {
-	case strings.Contains(lower, "oomkilled") || strings.Contains(lower, "outofmemory") || strings.Contains(lower, "exit code 137") || strings.Contains(lower, "memory limit exceeded"):
-		return CategoryOOMKilled, "Container exceeded memory limit and was killed (OOMKilled).", true
-	case strings.Contains(lower, "imagepullbackoff") || strings.Contains(lower, "errimagepull") || strings.Contains(lower, "manifest unknown") || strings.Contains(lower, "failed to pull image"):
-		return CategoryImagePullFail, "Failed to pull container image from registry.", true
-	case strings.Contains(lower, "deadlock") || strings.Contains(lower, "lock wait timeout") || strings.Contains(lower, "database lock") || strings.Contains(lower, "lock contention"):
-		return CategoryDBLock, "Database lock contention or deadlock detected.", true
-	case strings.Contains(lower, "readiness probe failed") || strings.Contains(lower, "probe failed") || strings.Contains(lower, "unhealthy"):
-		return CategoryReadinessProbeFail, "Readiness probe failed; container not marked ready.", true
-	case strings.Contains(lower, "panic:") || strings.Contains(lower, "missing required configuration") || strings.Contains(lower, "configuration validation failed") || strings.Contains(lower, "syntax error") || strings.Contains(lower, "invalid configuration") || strings.Contains(lower, "required setting"):
-		return CategoryCrashLoopBadConfig, "Application crashed due to bad configuration or unhandled panic.", true
-	case strings.Contains(lower, "no events found") && (strings.Contains(lower, "running") || strings.Contains(lower, "200 ok")):
-		return CategoryNoFault, "No fault detected; services operating normally.", true
+// podTableState says what the pod table (kubectl get pods) in a text shows.
+// seen: there is a table. pullWait: a pod row currently shows an image-pull wait status.
+type podTableState struct{ seen, pullWait bool }
+
+// tableState reads the pod table in text, if there is one.
+func tableState(text string) podTableState {
+	var st podTableState
+	for _, m := range podRowRegex.FindAllStringSubmatch(text, -1) {
+		st.seen = true
+		status := strings.ToLower(m[4])
+		// "ErrImagePull", "ImagePullBackOff", "Init:ImagePullBackOff", "InvalidImageName"
+		if strings.Contains(status, "imagepull") || strings.Contains(status, "invalidimagename") {
+			st.pullWait = true
+		}
 	}
-	return "", "", false
+	return st
 }
 
-func formatHeuristicReport(category, explanation string) string {
-	return fmt.Sprintf("Root Cause: %s\nConfidence: HIGH\nEvidence:\n- Matched heuristic pattern\n\nRecommendations:\n1. Apply standard remediation for %s.\n\nROOT_CAUSE_CATEGORY: %s\n",
-		explanation, category, category)
+type rule struct {
+	category, explanation string
+	any                   []string // one of these must be in the text ...
+	also                  []string // ... and, if set, one of these too
+}
+
+var rules = []rule{
+	{CategoryOOMKilled, "Container exceeded memory limit and was killed (OOMKilled).", []string{"oomkilled", "outofmemory", "exit code 137", "memory limit exceeded"}, nil},
+	{CategoryImagePullFail, "Failed to pull container image from registry.", []string{"imagepullbackoff", "errimagepull", "manifest unknown", "failed to pull image"}, nil},
+	{CategoryDBLock, "Database lock contention or deadlock detected.", []string{"deadlock", "lock wait timeout", "database lock", "lock contention"}, nil},
+	{CategoryReadinessProbeFail, "Readiness probe failed; container not marked ready.", []string{"readiness probe failed", "probe failed", "unhealthy"}, nil},
+	{CategoryCrashLoopBadConfig, "Application crashed due to bad configuration or unhandled panic.", []string{"panic:", "missing required configuration", "configuration validation failed", "syntax error", "invalid configuration", "required setting"}, nil},
+	{CategoryNoFault, "No fault detected; services operating normally.", []string{"no events found"}, []string{"running", "200 ok"}},
+}
+
+// evaluateRules matches text on its own (the pod table, if any, is the one inside text).
+func evaluateRules(text string) (string, string, bool) {
+	cat, expl, _, ok := matchRules(text, tableState(text))
+	return cat, expl, ok
+}
+
+// matchRules returns the first rule that matches, and the line of text that matched (trimmed).
+// An old "Failed to pull image" event stays in the namespace events after the pod recovered.
+// So when a pod table is known, the image-pull rule fires only if a pod is waiting on an image
+// right now. With no table (a plain log file) the words alone decide, as before.
+func matchRules(text string, tbl podTableState) (category, explanation, evidence string, ok bool) {
+	lower := strings.ToLower(text)
+	for _, r := range rules {
+		if r.category == CategoryImagePullFail && tbl.seen && !tbl.pullWait {
+			continue
+		}
+		kw := firstContained(lower, r.any)
+		if kw == "" || (len(r.also) > 0 && firstContained(lower, r.also) == "") {
+			continue
+		}
+		return r.category, r.explanation, lineWith(text, kw), true
+	}
+	return "", "", "", false
+}
+
+func firstContained(lower string, words []string) string {
+	for _, w := range words {
+		if strings.Contains(lower, w) {
+			return w
+		}
+	}
+	return ""
+}
+
+// lineWith returns the first line of text that contains word (any case), trimmed and cut to 200 characters.
+func lineWith(text, word string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(strings.ToLower(line), word) {
+			line = strings.Join(strings.Fields(line), " ")
+			if r := []rune(line); len(r) > 200 {
+				line = string(r[:200]) + "..."
+			}
+			return line
+		}
+	}
+	return ""
+}
+
+func formatHeuristicReport(category, explanation, evidence string) string {
+	ev := "Matched heuristic pattern"
+	if evidence != "" {
+		ev += ": " + evidence
+	}
+	return fmt.Sprintf("Root Cause: %s\nConfidence: HIGH\nEvidence:\n- %s\n\nRecommendations:\n1. Apply standard remediation for %s.\n\nROOT_CAUSE_CATEGORY: %s\n",
+		explanation, ev, category, category)
 }
 
 // formatCannotDetermine is the honest answer when the rules have nothing to go on.

@@ -310,3 +310,4 @@ if [ -s "$OUT/times.tsv" ]; then
 fi
 echo "== the whole run took $(( (SECONDS + 59) / 60 )) min"
 echo "logs saved in $OUT; table written to $DEST"
+if [ -z "${ACC_CASES:-}" ]; then echo "full run: to publish this scorecard, run: make commit-results   (it refuses a scorecard with failed cells)"; fi

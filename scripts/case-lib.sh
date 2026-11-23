@@ -6,6 +6,7 @@
 # pod of a case carries the label app=<name>):
 #   logs_have APP REGEX      the logs (current or previous container) of APP match REGEX
 #   reasons_have APP REGEX   the pod phase or container state/last-state reason of APP matches REGEX (e.g. OOMKilled)
+#   exit_code_is APP N       a container of APP last ended (or is ending) with exit code N (e.g. 137 = killed, often for memory)
 #   has_event REGEX          an event in the namespace matches REGEX
 #   phase APP                pod phase (Running, Pending ...)
 #   restarts APP             highest container restart count
@@ -19,6 +20,10 @@ logs_have() {
 }
 reasons() {
   k get pods -l "app=$1" -o jsonpath='{range .items[*]}{.status.phase} {.status.containerStatuses[*].state.waiting.reason} {.status.containerStatuses[*].state.terminated.reason} {.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}' 2>/dev/null
+}
+# The reason text "OOMKilled" is not always kept: a killed pod may only show "Error" with exit code 137.
+exit_code_is() {
+  k get pods -l "app=$1" -o jsonpath='{range .items[*]}{.status.containerStatuses[*].lastState.terminated.exitCode} {.status.containerStatuses[*].state.terminated.exitCode}{"\n"}{end}' 2>/dev/null | tr ' ' '\n' | grep -Fxq -- "$2"
 }
 reasons_have() { reasons "$1" | grep -Eq -- "$2"; }
 phase() { k get pods -l "app=$1" -o jsonpath='{.items[0].status.phase}' 2>/dev/null; }

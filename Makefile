@@ -4,10 +4,10 @@ EVAL_OUT ?= /tmp/log-analyzer-eval-offline.json
 IMAGE ?= log-analyzer
 VERSION ?= 0.1.0
 
-.PHONY: check-cases validate-cases check-providers check-accuracy-run check-accuracy-report check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
+.PHONY: check-cases validate-cases check-providers check-accuracy-run check-accuracy-report check-commit-results commit-results check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
 
 # Everything GitHub runs. Needs no API key and makes no paid calls.
-ci: eval-offline fmt-check vet build test race check-redaction check-providers check-cases check-accuracy-run check-accuracy-report helm-lint
+ci: eval-offline fmt-check vet build test race check-redaction check-providers check-cases check-accuracy-run check-accuracy-report check-commit-results helm-lint
 
 fmt-check:
 > @test -z "$$(gofmt -l .)" || { echo "gofmt needed for:"; gofmt -l .; exit 1; }
@@ -84,6 +84,12 @@ check-accuracy-run:
 
 check-accuracy-report:
 > ./scripts/check-accuracy-report.sh
+
+check-commit-results:
+> ./scripts/check-commit-results.sh
+
+commit-results:
+> ./scripts/commit-results.sh
 
 check-redaction:
 > ./scripts/check-redaction.sh
