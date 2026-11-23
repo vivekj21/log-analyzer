@@ -63,7 +63,7 @@ Comment lines at the top, then ordinary Kubernetes YAML. Every object lives in t
 ## Commands
 
 - `make validate-cases`: starts every case and checks that its fault shows up. No key, no model, no cost. Run it after adding or changing a case.
-- `make accuracy`: the full scorecard. Options are at the top of `scripts/accuracy.sh` (`ACC_SET=heldout`, `ACC_CASES="oom image"`, `ACC_REPEAT=3`).
+- `make accuracy`: the full scorecard. It first prints a plan (how many analyses are still to ask, and how long that usually takes, from earlier runs) and at the end the real timings. `ACC_PARALLEL=3` analyses three cases at the same time: good for Gemini, but not for a service with a low per-minute or per-day limit such as the Groq free plan. Options are at the top of `scripts/accuracy.sh` (`ACC_SET=heldout`, `ACC_CASES="oom image"`, `ACC_REPEAT=3`).
 - `make check-cases`: static checks, part of `make ci`.
 
 ## Known gaps

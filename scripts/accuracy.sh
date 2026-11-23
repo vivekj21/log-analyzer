@@ -27,6 +27,10 @@
 #   held-out run only does the rest. A change to scripts, docs or the Makefile keeps them; any change to the Go code (which includes
 #   the prompt and the tool definitions) starts fresh. Failed runs are never kept. Not used when the Go code has uncommitted changes.
 #   ACC_REUSE=0     do not reuse or keep answers
+#   ACC_PARALLEL=3  analyse this many cases at the same time (default 1). Good for a service without a tight limit (Gemini);
+#                   do not use it with a service that has a low tokens-per-minute or per-day limit (Groq free plan).
+#   The run prints a plan before it starts (how many analyses are still to ask, and how long that takes at the usual speed,
+#   from earlier runs in ACC_LOGS_DIR/timings.tsv) and the real timings at the end.
 #   ACC_MODELS      which model services to test, space separated, each written as
 #                   label|provider|model|base_url|NAME_OF_THE_ENV_VAR_HOLDING_THE_KEY
 #                   Example:
@@ -102,6 +106,25 @@ done
 LABELS=("${GOOD_LABELS[@]:-}"); SPECS=("${GOOD_SPECS[@]:-}")
 fi
 
+PAR="${ACC_PARALLEL:-1}"; case "$PAR" in ''|*[!0-9]*|0) echo "ACC_PARALLEL must be a whole number, 1 or more"; exit 1;; esac
+if [ "$PAR" -gt 1 ] && ! command -v flock >/dev/null 2>&1; then echo "ACC_PARALLEL needs the flock command (package util-linux)"; exit 1; fi
+
+# Plan: how much is still to ask, and how long that usually takes (from the timings of earlier runs).
+if [ "$VALIDATE_ONLY" != 1 ] && [ -n "${SPECS[*]:-}" ]; then
+  for spec in "${SPECS[@]:-}"; do
+    [ -n "$spec" ] || continue
+    IFS='|' read -r label prov model base keyenv <<< "$spec"
+    todo=0; kept=0
+    for c in $CASES; do for ((RUN=1; RUN<=REPEAT; RUN++)); do
+      if [ "$REUSE" = 1 ] && [ -s "$CELLS/$(cell_key "$c" "$label|$prov|$model|$base")-$RUN" ]; then kept=$((kept+1)); else todo=$((todo+1)); fi
+    done; done
+    med=""; [ -s "$LOGROOT/timings.tsv" ] && med=$(awk -F'\t' -v l="$label" '$1==l {print $2}' "$LOGROOT/timings.tsv" | sort -n | awk '{a[NR]=$1} END{if(NR) print a[int((NR+1)/2)]}')
+    if [ "$todo" = 0 ]; then echo "== plan: $label: nothing to ask, all $kept answers are kept"
+    elif [ -n "$med" ]; then echo "== plan: $label: $todo analyses to ask ($kept kept), about $(( (todo*med/PAR + 59)/60 )) min at the usual ${med}s each$([ "$PAR" -gt 1 ] && echo ", $PAR at a time"), plus about 4 min to start the apps"
+    else echo "== plan: $label: $todo analyses to ask ($kept kept); no timing history yet (this run records it), plus about 4 min to start the apps"; fi
+  done
+fi
+
 ALL_CASES="$CASES"
 PREV=$(kubectl config current-context 2>/dev/null || true); CREATED=0
 if [ -n "${K3D_CLUSTER:-}" ]; then
@@ -115,6 +138,7 @@ else
   CREATED=1
 fi
 cleanup() {
+  jobs -p | xargs -r kill 2>/dev/null
   for c in $ALL_CASES; do
     for n in "la-acc-$c" $(extra_namespaces "$c"); do kubectl delete namespace "$n" --wait=false >/dev/null 2>&1; done
   done
@@ -172,12 +196,13 @@ CASES="$VALID"; [ -n "$SKIPPED" ] && ACC_CASES="$CASES"
 
 # the category the report committed to Git (first 20 lines hold it), or ERROR / NONE
 answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any) is in LLM_API_KEY; CELL (if set) is where the answer is kept
-  local repo f cat ex tries c=$1 col=$2 svc svcargs=() attempt=0 class waits=(${ACC_RETRY_WAITS-20 60}); shift 2
+  local repo f cat ex tries t0 c=$1 col=$2 svc svcargs=() attempt=0 class waits=(${ACC_RETRY_WAITS-20 60}); shift 2
   if [ -n "${CELL:-}" ] && [ -s "$CELL" ]; then   # asked before at this commit: reuse
     cat=$(sed -n 1p "$CELL"); ex=$(sed -n 2p "$CELL")
     [ "$ex" = "-" ] || printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$ex" >> "$OUT/explain.tsv"
     echo "$col" >> "$OUT/reused.txt"; echo "$cat"; return
   fi
+  t0=$(date +%s)
   svc=$(case_meta "$c" service); svc="${svc:-$c}"; [ "$svc" = "-" ] || svcargs=(--service "$svc")
   while :; do
     repo=$(mktemp -d)
@@ -187,27 +212,39 @@ answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any)
     if [ "$class" = network ] && [ "$attempt" -lt "${#waits[@]}" ]; then sleep "${waits[$attempt]}"; attempt=$((attempt+1)); continue; fi
     tries=""; [ "$attempt" -gt 0 ] && tries=" (after $attempt retries)"
     printf '%s\n' "$c $col run $RUN: [$class]$tries $(grep -v '^[[:space:]]*$' "$OUT/$c-$col-$RUN.log" | tail -1 | cut -c1-400)" >> "$OUT/errors.txt"
-    echo ERROR; return
+    echo "$class" > "$OUT/$c-$col-$RUN.class"; echo ERROR; return
   done
   f=$(find "$repo" -name '*.md' | head -1)
-  [ -n "$f" ] || { echo NONE; return; }
+  [ -n "$f" ] || { echo other > "$OUT/$c-$col-$RUN.class"; echo NONE; return; }
   cat=$(sed -n 1,20p "$f" | grep -oE "\"($CATRE)\"" | head -1 | tr -d '"')
   ex=-
   if [ "$cat" = "$TRUTH" ]; then ex=$(explain_check "$c" "$f"); printf '%s\t%s\t%s\t%s\n' "$c" "$col" "$RUN" "$ex" >> "$OUT/explain.tsv"; fi
   if [ -n "${CELL:-}" ] && [ -n "$cat" ]; then mkdir -p "$(dirname "$CELL")"; printf '%s\n%s\n' "$cat" "$ex" > "$CELL"; cp "$f" "$CELL.md"; fi
+  [ "$col" = rules ] || printf '%s\t%s\n' "$col" "$(( $(date +%s) - t0 ))" >> "$OUT/times.tsv"
   echo "${cat:-NONE}"
 }
 
 # the categories come from the Go code, so there is one list only
 CATRE=$(grep -oE 'Category[A-Za-z]+ += "[A-Z_]+"' internal/llm/model.go | grep -oE '"[A-Z_]+"' | tr -d '"' | paste -sd'|')
 [ -n "$CATRE" ] || { echo "cannot read the categories from internal/llm/model.go"; exit 1; }
-R="$OUT/results.tsv"; E="$OUT/explain.tsv"; : > "$R"; : > "$E"; N=0; FAILS=(); LASTCLASS=()
-for c in $CASES; do
+R="$OUT/results.tsv"; E="$OUT/explain.tsv"; : > "$R"; : > "$E"; : > "$OUT/times.tsv"
+rm -rf "$OUT/rows" "$OUT/fails"; mkdir -p "$OUT/rows" "$OUT/fails"   # a fresh start: counts and rows never carry over from another run
+N=$(echo $CASES | wc -w)
+
+# Consecutive failures per model, kept in files so cases that run at the same time share one count.
+locked() { local l=$1; shift; if command -v flock >/dev/null 2>&1; then ( flock 9; "$@" ) 9>"$OUT/fails/$l.lock"; else "$@"; fi; }
+_note() { local n=0; [ -s "$OUT/fails/$1.n" ] && n=$(cat "$OUT/fails/$1.n")
+  if [ "$2" = ok ]; then echo 0 > "$OUT/fails/$1.n"; else echo $((n+1)) > "$OUT/fails/$1.n"; echo "$3" > "$OUT/fails/$1.class"; fi; }
+note_result() { locked "$1" _note "$1" "$2" "${3:-other}"; }
+fail_count() { [ -s "$OUT/fails/$1.n" ] && cat "$OUT/fails/$1.n" || echo 0; }
+fail_class() { [ -s "$OUT/fails/$1.class" ] && cat "$OUT/fails/$1.class" || echo other; }
+
+run_case() { # $1 = case, $2 = row file name (keeps the table in case order when cases run at the same time)
+  local c=$1 TRUTH SYMPTOM SIM RUN HL H A i spec label prov model base keyenv args CELL kept ROW; local -a ML
   TRUTH=$(case_meta "$c" expect)
   SYMPTOM=$(case_meta "$c" symptom)
   SIM=""; grep -q '^# simulated:' "$CASES_DIR/$c.yaml" && SIM=" (simulated)"
   echo "== case $c (truth $TRUTH), $REPEAT run(s) per model"
-  N=$((N+1))
   HL=""; ML=(); for _ in "${LABELS[@]:-}"; do ML+=(""); done
   for ((RUN=1; RUN<=REPEAT; RUN++)); do
     H=$(CELL="" answer "$c" rules --llm heuristic)
@@ -218,14 +255,14 @@ for c in $CASES; do
       IFS='|' read -r label prov model base keyenv <<< "$spec"
       args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
       CELL=""; [ "$REUSE" = 1 ] && CELL="$CELLS/$(cell_key "$c" "$label|$prov|$model|$base")-$RUN"
-      if [ "${FAILS[$i]:-0}" -ge 3 ]; then
-        A=ERROR; echo "$c $label run $RUN: skipped (3 failures in a row; last reason: ${LASTCLASS[$i]:-other})" >> "$OUT/errors.txt"
+      if [ "$(fail_count "$label")" -ge 3 ]; then
+        A=ERROR; echo "$c $label run $RUN: skipped (3 failures in a row; last reason: $(fail_class "$label"))" >> "$OUT/errors.txt"
       else
         kept=0; [ -n "$CELL" ] && [ -s "$CELL" ] && kept=1
         A=$(CELL="$CELL" LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")
         case "$A" in
-          ERROR|NONE) FAILS[$i]=$(( ${FAILS[$i]:-0} + 1 )); LASTCLASS[$i]=$(tail -1 "$OUT/errors.txt" | sed -n 's/^[^[]*\[\([a-z_]*\)\].*/\1/p');;
-          *) FAILS[$i]=0;;
+          ERROR|NONE) note_result "$label" fail "$(cat "$OUT/$c-$label-$RUN.class" 2>/dev/null)";;
+          *) note_result "$label" ok;;
         esac
         [ "$kept" = 1 ] || case " ${ACC_SLOW-groq} " in *" $label "*) sleep "${ACC_PAUSE:-60}";; esac
       fi
@@ -235,8 +272,21 @@ for c in $CASES; do
   done
   ROW="$c$SIM"$'\t'"$TRUTH"$'\t'"$HL"
   i=0; for spec in "${SPECS[@]:-}"; do [ -n "$spec" ] || continue; ROW="$ROW"$'\t'"${ML[$i]}"; i=$((i+1)); done
-  printf '%s\n' "$ROW" >> "$R"
+  printf '%s\n' "$ROW" > "$OUT/rows/$2"
+  echo "   done: $c"
+}
+
+idx=0
+for c in $CASES; do
+  idx=$((idx+1))
+  if [ "$PAR" = 1 ]; then run_case "$c" "$(printf '%04d' "$idx")"
+  else
+    while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do wait -n; done
+    run_case "$c" "$(printf '%04d' "$idx")" &
+  fi
 done
+wait
+cat "$OUT"/rows/* > "$R"
 
 TOTAL=$((N*REPEAT))
 if [ -n "${ACC_CASES:-}" ]; then DEST="$OUT/partial-results.md"; else DEST=accuracy/RESULTS.md; fi
@@ -250,4 +300,13 @@ echo; cat "$DEST"
 echo
 if [ -s "$OUT/errors.txt" ]; then echo "== why runs failed (last log line of each):"; cut -c1-300 "$OUT/errors.txt"; echo; fi
 [ "$REUSE" = 1 ] && echo "answers kept in $CELLS: a later run of the same code reuses them and only asks for what is missing"
+if [ -s "$OUT/times.tsv" ]; then
+  echo "== timing (seconds per analysis, retries and waits included):"
+  for spec in "${SPECS[@]:-}"; do
+    [ -n "$spec" ] || continue; label="${spec%%|*}"
+    awk -F'\t' -v l="$label" '$1==l {print $2}' "$OUT/times.tsv" | sort -n | awk -v l="$label" '{a[NR]=$1; t+=$1} END{ if (NR) printf "   %s: %d analyses, median %ds, longest %ds, %d min in all\n", l, NR, a[int((NR+1)/2)], a[NR], (t+59)/60 }'
+  done
+  cat "$OUT/times.tsv" >> "$LOGROOT/timings.tsv"
+fi
+echo "== the whole run took $(( (SECONDS + 59) / 60 )) min"
 echo "logs saved in $OUT; table written to $DEST"

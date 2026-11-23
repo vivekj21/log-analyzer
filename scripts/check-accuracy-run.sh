@@ -7,6 +7,7 @@
 #  (4) the explanation checklist is applied to right answers only;
 #  (6) a network failure is retried and then counts only if every try fails; every failure is labelled with its reason;
 #  (7) answers are kept per version of the Go code (also in a real git checkout: scripts and docs may change, the Go code may not): a second run asks only for what is missing, and a failed run is never kept;
+#  (9) ACC_PARALLEL gives the same table as a serial run, really runs cases at the same time, and the timing lines are printed;
 #  (5) ACC_VALIDATE_ONLY=1 checks the faults without calling any model and fails if one is not visible.
 set -eu
 cd "$(dirname "$0")/.."
@@ -39,6 +40,7 @@ net="Investigation Failed: [MODEL_ERROR] Post https://x/v1:generateContent: dial
 case "$prov" in
   openai) echo "429 rate limit: tokens per day exceeded" >&2; exit 1;;
   down)   echo "tool result: pod blocked, exceeded quota in namespace" >&2; echo "$net" >&2; exit 1;;
+  slow)   sleep 2;;
   flaky)  if [ ! -e "$FLAKY_DIR/$ns" ]; then touch "$FLAKY_DIR/$ns"; echo "$net" >&2; exit 1; fi;;
 esac
 [ "$prov" = nocat ] && { echo "a report without any category" > "$repo/r.md"; exit 0; }
@@ -118,7 +120,7 @@ grep -q "Answers reused from earlier runs of the same code (not asked again): fl
 : > "$CALLS"
 reuse c3 ACC_MODELS="nc|nocat|m|http://x|FAKE_KEY" > /dev/null 2>&1 || fail "nocat run failed"
 reuse c3 ACC_MODELS="nc|nocat|m|http://x|FAKE_KEY" > /dev/null 2>&1 || fail "nocat second run failed"
-[ "$(grep -c -- '--provider nocat' "$CALLS")" = 4 ] || fail "an answer without a category must be asked again, not kept"
+[ "$(grep -c -- "--provider nocat" "$CALLS")" = 4 ] || { echo "calls: $(grep -c -- "--provider nocat" "$CALLS")"; cat "$CALLS" | cut -c1-150; fail "an answer without a category must be asked again, not kept"; }
 START=$SECONDS
 reuse c1 ACC_SLOW=flk ACC_PAUSE=5 ACC_MODELS="flk|flaky|m|http://x|FAKE_KEY" > /dev/null 2>&1 || fail "pause run failed"
 [ $((SECONDS - START)) -lt 5 ] || fail "answers that were reused still waited for the pause"
@@ -140,4 +142,25 @@ rm -rf "$FLAKY_DIR"; mkdir "$FLAKY_DIR"
 : > "$CALLS"; rm -rf "$FLAKY_DIR"; mkdir "$FLAKY_DIR"; grun || fail "git run 5"; [ "$(asked)" -ge 1 ] || fail "a change to the Go code must not reuse answers"
 ( cd "$G" && echo "// uncommitted" >> internal/llm/model.go )
 : > "$CALLS"; grun || fail "git run 6"; grep -q "Go code has uncommitted changes" "$T/gout.txt" || fail "an uncommitted change to the Go code must switch reuse off and say so"
-echo "check-accuracy-run: OK (logs kept, failure reasons, network retry, answers kept per version of the code, failing model skipped, invisible faults not scored, sets and service flag, explanation checks, validate-only)"
+
+# (9) parallel cases: same table, really concurrent, plan and timing printed
+ALL5="a1 a2 a3 a4 a5"
+run env ACC_CASES="$ALL5" ACC_PARALLEL=1 ACC_MODELS="ok|oksvc|m|http://x|FAKE_KEY" > "$T/p1.txt" 2>&1 || fail "serial run failed"
+run env ACC_CASES="$ALL5" ACC_PARALLEL=3 ACC_MODELS="ok|oksvc|m|http://x|FAKE_KEY" > "$T/p3.txt" 2>&1 || fail "parallel run failed"
+[ "$(grep '^| a' "$T/p1.txt" | cut -d" " -f2 | tr "\n" " ")" = "a1 a2 a3 a4 a5 " ] || fail "the table rows must be in case order (a1 a2 a3 a4 a5)"
+diff <(grep '^| a' "$T/p1.txt") <(grep '^| a' "$T/p3.txt") > /dev/null || { diff <(grep '^| a' "$T/p1.txt") <(grep '^| a' "$T/p3.txt"); fail "the parallel table differs from the serial one (rows must keep the case order)"; }
+START=$SECONDS
+run env ACC_CASES="$ALL5" ACC_PARALLEL=5 ACC_MODELS="slw|slow|m|http://x|FAKE_KEY" > "$T/p5.txt" 2>&1 || fail "slow parallel run failed"
+[ $((SECONDS - START)) -lt 8 ] || fail "5 analyses of 2 s with ACC_PARALLEL=5 took $((SECONDS - START)) s: they did not run at the same time"
+grep -Eq "^   slw: 5 analyses, median [23]s, longest [23]s" "$T/p5.txt" || { grep -n timing -A3 "$T/p5.txt"; fail "timing summary missing"; }
+grep -q "== the whole run took" "$T/p5.txt" || fail "total time missing"
+grep -q "== plan: slw: 5 analyses to ask (0 kept); no timing history yet" "$T/p5.txt" || { grep -n "plan" "$T/p5.txt"; fail "first run should say there is no timing history"; }
+run env ACC_CASES="$ALL5" ACC_PARALLEL=5 ACC_MODELS="slw|slow|m|http://x|FAKE_KEY" > "$T/p6.txt" 2>&1 || fail "second slow run failed"
+grep -Eq "== plan: slw: 5 analyses to ask \(0 kept\), about [0-9]+ min at the usual [23]s each, 5 at a time" "$T/p6.txt" || { grep -n "plan" "$T/p6.txt"; fail "the plan does not use the earlier timings"; }
+# a failing service under parallel runs: every case still gets a row, failures are labelled
+run env ACC_CASES="$ALL5" ACC_PARALLEL=3 ACC_MODELS="fake|openai|m|http://x|FAKE_KEY" > "$T/p7.txt" 2>&1 || fail "parallel run with a failing service failed"
+[ "$(grep -c '^| a' "$T/p7.txt")" = 5 ] || fail "every case needs a row even when the service fails"
+[ "$(grep -h '\[rate_limit\]' "$(ls -td "$T"/logs/*/ | head -1)errors.txt" | wc -l)" -ge 3 ] || fail "failures were not labelled rate_limit in a parallel run"
+if run env ACC_PARALLEL=0 > "$T/p8.txt" 2>&1; then fail "ACC_PARALLEL=0 must be refused"; fi
+grep -q "ACC_PARALLEL must be a whole number" "$T/p8.txt" || fail "no message for a bad ACC_PARALLEL"
+echo "check-accuracy-run: OK (logs kept, failure reasons, network retry, answers kept per version of the code, parallel cases and timing, failing model skipped, invisible faults not scored, sets and service flag, explanation checks, validate-only)"
