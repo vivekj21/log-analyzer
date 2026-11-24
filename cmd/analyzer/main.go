@@ -157,7 +157,7 @@ func main() {
 			log.Fatalf("Failed to initialize the reasoning client: %v", err)
 		}
 		defer liveClient.Close()
-		model = llm.NewRecorder(llm.ModeRecord, *recordDir, liveClient)
+		model = llm.NewRecorder(llm.ModeRecord, *recordDir, llm.NewCategoryGuard(liveClient))
 		log.Printf("[Model] Initialized Recorder in RECORD mode (dir: %s)", *recordDir)
 	case "live":
 		liveClient, err := llm.NewLive(ctx, cfg, toolRegistry)
@@ -165,7 +165,7 @@ func main() {
 			log.Fatalf("Failed to initialize the reasoning client: %v", err)
 		}
 		defer liveClient.Close()
-		model = liveClient
+		model = llm.NewCategoryGuard(liveClient)
 		log.Printf("[Model] Initialized live reasoning client (%s, %s)", *provider, *modelName)
 	default:
 		log.Fatalf("Invalid --llm mode: %q. Must be one of: live, record, replay, heuristic", *llmMode)

@@ -27,6 +27,16 @@ for P in openai anthropic; do
   grep -q "Tool invoked: list_pods" "$T/out-$P.log" || fail "$P: the model's tool call was not run"
   if grep -rqF --exclude-dir=.git "$KEY" "$REPO" "$T/out-$P.log"; then fail "$P: the API key leaked into the report or the logs"; fi
 done
+# A model that forgets the ROOT_CAUSE_CATEGORY line must be asked once for it, and the report must carry the answer.
+for P in openai anthropic; do
+  REPO="$T/forgetful-$P"; mkdir -p "$REPO"
+  if ! env -u GEMINI_API_KEY "$T/analyzer" --provider "$P" --base-url "http://127.0.0.1:$PORT/v1" --model fake-model \
+        --api-key-file "$T/key" --namespace demo --service web --symptom "forgetful crash loop" --dry-run \
+        --git-repo "$REPO" --timeout 2m >"$T/forgetful-$P.log" 2>&1; then
+    fail "$P forgetful model: analyzer exited with an error"; tail -8 "$T/forgetful-$P.log"; continue
+  fi
+  grep -rq --exclude-dir=.git "DNS_FAIL" "$REPO" || fail "$P forgetful model: the missing category line was not asked for, or its answer is not in the report"
+done
 python3 - "$T/req.log" "$KEY" <<'PY'
 import json, sys
 seen = {"openai": False, "anthropic": False}
