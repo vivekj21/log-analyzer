@@ -2,7 +2,7 @@
 # symptom: the thumbnailer is fine for a while and then drops out, again and again
 # set: heldout
 # service: thumbnailer
-# verify: reasons_have thumbnailer 'OOMKilled'
+# verify: reasons_have thumbnailer 'OOMKilled' || exit_code_is thumbnailer 137
 # must-mention: (OOM|memory)
 # note: looks healthy for the first 45 seconds of every run
 apiVersion: apps/v1

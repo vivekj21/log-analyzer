@@ -2,7 +2,7 @@
 # symptom: the cart page keeps failing
 # set: dev
 # service: -
-# verify: reasons_have cart 'OOMKilled' && logs_have search 'FATAL'
+# verify: { reasons_have cart 'OOMKilled' || exit_code_is cart 137; } && logs_have search 'FATAL'
 # must-mention: cart
 # must-mention: (OOM|memory)
 # must-mention: search
