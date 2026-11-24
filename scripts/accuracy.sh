@@ -19,8 +19,8 @@
 #   ACC_PAUSE=60    so a service with a low tokens-per-minute limit can recover between cases (both are the default)
 #   ACC_LOGS_DIR    where each run keeps its logs (default ~/log-analyzer-accuracy-logs/<date-time>/)
 #   A failed run is labelled with its reason in errors.txt and on the scorecard: rate_limit (limit or quota reached), network
-#   (service not reachable), auth (key refused), timeout, other. A network failure is retried twice (after 20s, then 60s;
-#   ACC_RETRY_WAITS="20 60", use "" for none) before it counts. After 3 failed runs in a row, a model is not called again
+#   (service not reachable), auth (key refused), timeout, service (the service answered with an error such as 500/503), other. A network failure is retried twice (after 20s, then 60s;
+#   ACC_RETRY_WAITS="20 60", use "" for none) before it counts. After 3 failed runs in a row for a rate limit or a refused key (6 for any other reason), a model is not called again
 #   in this run (its remaining cells show ERROR and errors.txt says "skipped ... last reason: ..."), so a used-up quota does not cost an hour.
 #   Answers are kept (in ACC_CELLS_DIR, default <ACC_LOGS_DIR>/cells) per version of the Go code (internal/, cmd/, go.mod,
 #   go.sum), case file, model and run number. A later run of the same code reuses them and only asks for what is missing: a partial run is not wasted, and a full run after a
@@ -77,13 +77,16 @@ if [ "${ACC_REUSE:-1}" = 1 ] && [ "$VALIDATE_ONLY" != 1 ]; then
   [ "$REUSE" = 1 ] && mkdir -p "$CELLS"
 fi
 cell_key() { printf '%s' "$CODEKEY/$(sha1sum < "$CASES_DIR/$1.yaml" | cut -c1-12)/$2" | sha1sum | cut -c1-20; }
-# Why a run failed, from the last line of its log only (earlier lines are the investigation, which may mention quotas or timeouts)
+# The line that says why a run failed: the last line of its log, ignoring the normal "Agent shutting down" lines that follow
+# every failure (earlier lines are the investigation, which may mention quotas or timeouts)
+fail_line() { grep -v '^[[:space:]]*$' "$1" | grep -vi 'shutting down' | tail -1; }
 failure_class() {
-  local t; t=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
+  local t; t=$(fail_line "$1")
   if   grep -Eiq '429|rate.?limit|quota|RESOURCE_EXHAUSTED|tokens per (day|minute)|too many requests' <<< "$t"; then echo rate_limit
   elif grep -Eiq 'dial tcp|lookup [^ ]+|no such host|connection (refused|reset)|i/o timeout|TLS handshake|network is unreachable|temporary failure in name resolution|unexpected EOF' <<< "$t"; then echo network
   elif grep -Eiq '\b(401|403)\b|unauthorized|api key|permission denied|invalid.*key' <<< "$t"; then echo auth
-  elif grep -Eiq 'deadline exceeded|timed out|timeout' <<< "$t"; then echo timeout
+  elif grep -Eiq 'DEADLINE_EXCEEDED|deadline (exceeded|expired)|(error|status|code|http)[: ]*504|timed out|timeout' <<< "$t"; then echo timeout
+  elif grep -Eiq '(error|status|code|http)[: ]*50[0-3]|UNAVAILABLE|INTERNAL|overloaded' <<< "$t"; then echo service
   else echo other; fi
 }
 if [ "$VALIDATE_ONLY" = 1 ]; then SPECS=(); LABELS=(); else
@@ -211,7 +214,7 @@ answer() { # $1=case $2=column name  rest = analyzer arguments; the key (if any)
     class=$(failure_class "$OUT/$c-$col-$RUN.log")
     if [ "$class" = network ] && [ "$attempt" -lt "${#waits[@]}" ]; then sleep "${waits[$attempt]}"; attempt=$((attempt+1)); continue; fi
     tries=""; [ "$attempt" -gt 0 ] && tries=" (after $attempt retries)"
-    printf '%s\n' "$c $col run $RUN: [$class]$tries $(grep -v '^[[:space:]]*$' "$OUT/$c-$col-$RUN.log" | tail -1 | cut -c1-400)" >> "$OUT/errors.txt"
+    printf '%s\n' "$c $col run $RUN: [$class]$tries $(fail_line "$OUT/$c-$col-$RUN.log" | cut -c1-400)" >> "$OUT/errors.txt"
     echo "$class" > "$OUT/$c-$col-$RUN.class"; echo ERROR; return
   done
   f=$(find "$repo" -name '*.md' | head -1)
@@ -237,10 +240,13 @@ _note() { local n=0; [ -s "$OUT/fails/$1.n" ] && n=$(cat "$OUT/fails/$1.n")
   if [ "$2" = ok ]; then echo 0 > "$OUT/fails/$1.n"; else echo $((n+1)) > "$OUT/fails/$1.n"; echo "$3" > "$OUT/fails/$1.class"; fi; }
 note_result() { locked "$1" _note "$1" "$2" "${3:-other}"; }
 fail_count() { [ -s "$OUT/fails/$1.n" ] && cat "$OUT/fails/$1.n" || echo 0; }
+# A refused key or a used-up quota will not get better during the run: stop after 3. Anything else (a slow or overloaded service,
+# a network blip) often passes in a few minutes, so a model is given 6 failures in a row before it is skipped.
+trip_at() { case "$(fail_class "$1")" in rate_limit|auth) echo 3;; *) echo 6;; esac; }
 fail_class() { [ -s "$OUT/fails/$1.class" ] && cat "$OUT/fails/$1.class" || echo other; }
 
 run_case() { # $1 = case, $2 = row file name (keeps the table in case order when cases run at the same time)
-  local c=$1 TRUTH SYMPTOM SIM RUN HL H A i spec label prov model base keyenv args CELL kept ROW; local -a ML
+  local thr c=$1 TRUTH SYMPTOM SIM RUN HL H A i spec label prov model base keyenv args CELL kept ROW; local -a ML
   TRUTH=$(case_meta "$c" expect)
   SYMPTOM=$(case_meta "$c" symptom)
   SIM=""; grep -q '^# simulated:' "$CASES_DIR/$c.yaml" && SIM=" (simulated)"
@@ -255,8 +261,9 @@ run_case() { # $1 = case, $2 = row file name (keeps the table in case order when
       IFS='|' read -r label prov model base keyenv <<< "$spec"
       args=(--provider "$prov"); [ -n "$model" ] && args+=(--model "$model"); [ -n "$base" ] && args+=(--base-url "$base")
       CELL=""; [ "$REUSE" = 1 ] && CELL="$CELLS/$(cell_key "$c" "$label|$prov|$model|$base")-$RUN"
-      if [ "$(fail_count "$label")" -ge 3 ]; then
-        A=ERROR; echo "$c $label run $RUN: skipped (3 failures in a row; last reason: $(fail_class "$label"))" >> "$OUT/errors.txt"
+      thr=$(trip_at "$label")
+      if [ "$(fail_count "$label")" -ge "$thr" ]; then
+        A=ERROR; echo "$c $label run $RUN: skipped ($thr failures in a row; last reason: $(fail_class "$label"))" >> "$OUT/errors.txt"
       else
         kept=0; [ -n "$CELL" ] && [ -s "$CELL" ] && kept=1
         A=$(CELL="$CELL" LLM_API_KEY="${!keyenv}" answer "$c" "$label" "${args[@]}")

@@ -40,6 +40,11 @@ func retryDelay(err error, attempt int) (time.Duration, bool) {
 		return d, true
 	case strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE"):
 		return time.Duration(5*attempt) * time.Second, true
+	case strings.Contains(msg, "504") || strings.Contains(msg, "DEADLINE_EXCEEDED") ||
+		strings.Contains(msg, "500") || strings.Contains(msg, "INTERNAL") || strings.Contains(msg, "502"):
+		// The service itself failed or ran out of time (e.g. "Error 504 ... Deadline expired"). A new try usually works.
+		// The OpenAI-compatible path already retries these; at most 3 tries here, so a broken service is not hammered.
+		return time.Duration(5*attempt) * time.Second, attempt < 3
 	}
 	return 0, false
 }

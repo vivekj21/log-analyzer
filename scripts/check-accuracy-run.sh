@@ -8,6 +8,7 @@
 #  (6) a network failure is retried and then counts only if every try fails; every failure is labelled with its reason;
 #  (7) answers are kept per version of the Go code (also in a real git checkout: scripts and docs may change, the Go code may not): a second run asks only for what is missing, and a failed run is never kept;
 #  (9) ACC_PARALLEL gives the same table as a serial run, really runs cases at the same time, and the timing lines are printed;
+#  (10) a gateway timeout (504, followed by an "Agent shutting down" line) is labelled timeout; a refused key stops a model after 3 failures in a row, any other failure only after 6;
 #  (5) ACC_VALIDATE_ONLY=1 checks the faults without calling any model and fails if one is not visible.
 set -eu
 cd "$(dirname "$0")/.."
@@ -40,6 +41,9 @@ net="Investigation Failed: [MODEL_ERROR] Post https://x/v1:generateContent: dial
 case "$prov" in
   openai) echo "429 rate limit: tokens per day exceeded" >&2; exit 1;;
   down)   echo "tool result: pod blocked, exceeded quota in namespace" >&2; echo "$net" >&2; exit 1;;
+  gw)     echo "Investigation Failed: Error 504, Message: Deadline expired before operation could complete., Status: DEADLINE_EXCEEDED" >&2; echo "[Fetcher] ■ Agent shutting down" >&2; exit 1;;
+  boom)   echo "something odd happened" >&2; exit 1;;
+  badkey) echo "Investigation Failed: 401 unauthorized: invalid api key" >&2; exit 1;;
   slow)   sleep 2;;
   flaky)  if [ ! -e "$FLAKY_DIR/$ns" ]; then touch "$FLAKY_DIR/$ns"; echo "$net" >&2; exit 1; fi;;
 esac
@@ -163,4 +167,17 @@ run env ACC_CASES="$ALL5" ACC_PARALLEL=3 ACC_MODELS="fake|openai|m|http://x|FAKE
 [ "$(grep -h '\[rate_limit\]' "$(ls -td "$T"/logs/*/ | head -1)errors.txt" | wc -l)" -ge 3 ] || fail "failures were not labelled rate_limit in a parallel run"
 if run env ACC_PARALLEL=0 > "$T/p8.txt" 2>&1; then fail "ACC_PARALLEL=0 must be refused"; fi
 grep -q "ACC_PARALLEL must be a whole number" "$T/p8.txt" || fail "no message for a bad ACC_PARALLEL"
+# (10) failure labels and the two thresholds
+: > "$CALLS"
+run env ACC_CASES="a1" ACC_REPEAT=2 ACC_MODELS="gwy|gw|m|http://x|FAKE_KEY" > "$T/out7.txt" 2>&1 || fail "gateway-timeout run failed"
+grep -q -- '- gwy: 2 timeout$' "$T/out7.txt" || { grep -n 'Why runs' -A4 "$T/out7.txt"; fail "a 504 DEADLINE_EXCEEDED followed by 'Agent shutting down' is not labelled timeout"; }
+grep -q 'DEADLINE_EXCEEDED' "$(ls -td "$T"/logs/*/ | head -1)errors.txt" || fail "errors.txt shows the shutdown line, not the reason"
+: > "$CALLS"
+run env ACC_CASES="a1" ACC_REPEAT=8 ACC_MODELS="bk|badkey|m|http://x|FAKE_KEY" > "$T/out8.txt" 2>&1 || fail "refused-key run failed"
+[ "$(grep -c -- '--provider badkey' "$CALLS")" = 3 ] || { grep -c -- '--provider badkey' "$CALLS"; fail "a refused key must stop the model after 3 calls"; }
+: > "$CALLS"
+run env ACC_CASES="a1" ACC_REPEAT=8 ACC_MODELS="bm|boom|m|http://x|FAKE_KEY" > "$T/out9.txt" 2>&1 || fail "other-failure run failed"
+[ "$(grep -c -- '--provider boom' "$CALLS")" = 6 ] || { grep -c -- '--provider boom' "$CALLS"; fail "a failure of reason other must stop the model after 6 calls, not 3"; }
+grep -q 'skipped (6 failures in a row' "$(ls -td "$T"/logs/*/ | head -1)errors.txt" || fail "skip message does not give the threshold"
+
 echo "check-accuracy-run: OK (logs kept, failure reasons, network retry, answers kept per version of the code, parallel cases and timing, failing model skipped, invisible faults not scored, sets and service flag, explanation checks, validate-only)"

@@ -134,7 +134,7 @@ write_report() {
   fi
   if [ -s "${ERRFILE:-/nonexistent}" ]; then
     echo "## Why runs failed"
-    echo "A failed run (⛔) is not a wrong answer. **rate_limit**: the service's limit or quota was reached. **network**: the service could not be reached (retried twice before giving up). **auth**: the key was refused. **timeout**: no answer in time. **other**: see the log. A run that was *skipped* was not tried, because the model had just failed 3 times in a row."
+    echo "A failed run (⛔) is not a wrong answer. **rate_limit**: the service's limit or quota was reached. **network**: the service could not be reached (retried twice before giving up). **auth**: the key was refused. **timeout**: no answer in time. **service**: the service answered with an error (500/503). **other**: see the log. A run that was *skipped* was not tried, because the model had just failed several times in a row (3 for a rate limit or a refused key, 6 for any other reason)."
     awk '{
       label=$2; if (label=="rules") label="Rule-based"
       if (match($0, /last reason: [a-z_]+\)/))   print label "\t2\t" substr($0, RSTART+13, RLENGTH-14)
