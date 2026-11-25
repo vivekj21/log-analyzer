@@ -7,7 +7,7 @@ VERSION ?= 0.1.0
 .PHONY: check-cases validate-cases check-providers check-accuracy-run check-accuracy-report check-commit-results commit-results check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
 
 # Everything GitHub runs. Needs no API key and makes no paid calls.
-ci: eval-offline fmt-check vet build test race check-redaction check-providers check-cases check-accuracy-run check-accuracy-report check-commit-results helm-lint
+ci: eval-offline fmt-check vet build test race check-redaction check-providers check-cases check-accuracy-run check-accuracy-report check-commit-results helm-lint check-helm-rbac
 
 fmt-check:
 > @test -z "$$(gofmt -l .)" || { echo "gofmt needed for:"; gofmt -l .; exit 1; }
@@ -72,6 +72,9 @@ helm-k3d:
 
 check-providers:
 > ./scripts/check-providers.sh
+
+check-helm-rbac:
+> ./scripts/check-helm-rbac.sh
 
 check-cases:
 > ./scripts/check-cases.sh

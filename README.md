@@ -111,7 +111,7 @@ kubectl logs -f job/inv1
 
 In live mode the chart mounts your Secret as a read-only file, not as an environment variable. The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
 
-The chart grants read-only access, and no ConfigMap access by default.
+The chart grants read-only access to the investigated namespace only (`investigation.namespace`, which must already exist), and no ConfigMap access by default. Set `rbac.clusterWide=true` to allow reading every namespace; the node tool (`get_node_conditions`) needs that.
 
 **Try it free on a throwaway local cluster** (needs Docker and k3d; no API key, it uses the built-in rule-based model via `--llm heuristic`):
 

@@ -29,9 +29,15 @@ limits:               # 0 disables a limit
   maxTotalTokens: 4000000
 job:
   ttlSecondsAfterFinished: 86400
+resources:            # requests and limits of the analyzer container
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 512Mi}
 rbac:
   create: true
-  allowConfigMaps: false   # keep false: the tool also denies the secrets ConfigMap by default
+  clusterWide: false       # false = read access only in investigation.namespace (that namespace must already exist).
+                           # The node tool (get_node_conditions) needs cluster-wide reads, so it is refused in this mode.
+                           # true = read access in every namespace, plus nodes (the older behaviour).
+  allowConfigMaps: false   # keep false: ConfigMaps may hold secrets, and the tool refuses to read them by default too
 serviceAccount:
   create: true
   name: ""

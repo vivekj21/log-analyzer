@@ -43,6 +43,9 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
   asks for an explicit acknowledgement before live mode.
 - Same-namespace data stays readable. Run with a **read-only Kubernetes
   service account**, so the cluster itself enforces what this code enforces.
+  The Helm chart does this by default: a read-only Role in the investigated namespace
+  only. A cluster-wide role is opt-in (`rbac.clusterWide=true`). `make ci` checks the
+  rendered chart for secrets access, write verbs and cluster-wide roles.
 - If `AllowSensitive` is turned on, ConfigMap contents become visible to the model.
 - Reports are generated text. A human should review them before acting.
 - The "Possible prompt injection" section depends on the model following instructions.

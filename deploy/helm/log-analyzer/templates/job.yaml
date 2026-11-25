@@ -80,6 +80,8 @@ spec:
               value: {{ .Values.limits.maxTokensPerInvestigation | quote }}
             - name: LOG_ANALYZER_MAX_TOTAL_TOKENS
               value: {{ .Values.limits.maxTotalTokens | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

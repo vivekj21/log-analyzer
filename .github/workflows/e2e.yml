@@ -3,16 +3,19 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+
 jobs:
   k3d:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: Install k3d
-        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.9.0 bash
+        run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/15dd1e2dbd62c53ed990fce9b7332335e8cb053c/install.sh | TAG=v5.9.0 bash
       - name: End-to-end test on a throwaway k3d cluster
         run: ./scripts/k3d-e2e.sh

@@ -1,11 +1,17 @@
 {{- if .Values.rbac.create }}
+{{- /* Default: read access only in the namespace being investigated (a Role). rbac.clusterWide=true gives the older cluster-wide role, which is also what the node tool needs. */}}
+{{- $ns := .Values.investigation.namespace }}
+{{- $sa := .Values.serviceAccount.name | default .Release.Name }}
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: {{ if .Values.rbac.clusterWide }}ClusterRole{{ else }}Role{{ end }}
 metadata:
   name: {{ .Release.Name }}-reader
+  {{- if not .Values.rbac.clusterWide }}
+  namespace: {{ $ns }}
+  {{- end }}
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "endpoints", "nodes"]
+    resources: ["pods", "pods/log", "events", "services", "endpoints"{{ if .Values.rbac.clusterWide }}, "nodes"{{ end }}]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets"]
@@ -17,7 +23,7 @@ rules:
     resources: ["endpointslices"]
     verbs: ["get", "list"]
   - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods", "nodes"]
+    resources: ["pods"{{ if .Values.rbac.clusterWide }}, "nodes"{{ end }}]
     verbs: ["get", "list"]
 {{- if .Values.rbac.allowConfigMaps }}
   - apiGroups: [""]
@@ -26,15 +32,18 @@ rules:
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: {{ if .Values.rbac.clusterWide }}ClusterRoleBinding{{ else }}RoleBinding{{ end }}
 metadata:
   name: {{ .Release.Name }}-reader
+  {{- if not .Values.rbac.clusterWide }}
+  namespace: {{ $ns }}
+  {{- end }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: {{ if .Values.rbac.clusterWide }}ClusterRole{{ else }}Role{{ end }}
   name: {{ .Release.Name }}-reader
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.serviceAccount.name | default .Release.Name }}
+    name: {{ $sa }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
