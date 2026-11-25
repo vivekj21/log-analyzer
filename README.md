@@ -2,7 +2,7 @@
 
 <p align="center">
 <b>An agentic AI on-call engineer for Kubernetes.</b><br/>
-It investigates an incident on its own, explains the root cause, and files the report in Git.
+It investigates an incident on its own, explains the root cause, and writes the report. It is shown on screen, and you can also save it as a file or in Git.
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@ It investigates an incident on its own, explains the root cause, and files the r
 
 ## What it does
 
-This tool finds the root cause when your app on Kubernetes has errors or is failing. Its AI agents read your logs and cluster details, then tell you the most likely root cause and how urgent it is (P0 is the most urgent, P3 the least). A short report is saved in Git.
+This tool finds the root cause when your app on Kubernetes has errors or is failing. Its AI agents read your logs and cluster details, then tell you the most likely root cause and how urgent it is (P0 is the most urgent, P3 the least). A short report is shown on screen. You can also save it as a file, or commit it to Git.
 
 You can also give it just a log file. Without an AI service, built-in rules do a simpler version of the same job.
 
@@ -34,16 +34,16 @@ flowchart LR
     PR <--> FE["Fetcher<br/>10 read-only tools<br/>checked, no shell"]
     PR <--> AN["Analyzer<br/>the AI model decides what to look at next"]
     PR --> GS["GitOps Scribe<br/>writes the report"]
-    GS --> OUT[("Git repo<br/>incident report")]
+    GS --> OUT[("Report on screen<br/>optional file or Git commit")]
 ```
 
-Real output from a run on a 216 KB Linux syslog (log-file mode):
+Real output of `go run ./cmd/analyzer --log-file app.log --llm heuristic` on a two-line sample log (the first lines):
 
 ```
-LOG ANALYSIS COMPLETE - ISSUE COMMITTED TO GIT
-Incident File  : .log-analyzer/incidents/2026-11-11-P1-security-anomaly-auth-surge-in.md
-Severity       : P1
-Root Cause     : Brute force credential stuffing attack, automated SSH scanning, or invalid authentication signatures.
+## Autonomous Log Analysis
+- **Diagnosed Issue:** Container Termination via OOM (Out Of Memory)
+- **Severity:** P0
+- **Root Cause Deduction:** Application memory usage exceeded Kubernetes pod resource limits or JVM/Runtime max heap.
 ```
 
 ## Why it is agentic
@@ -76,7 +76,28 @@ sequenceDiagram
 
 ## Quick start
 
-Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a `GEMINI_API_KEY`.
+### What you need
+
+- To analyze a log file: nothing else beyond the tool itself.
+- To investigate a Kubernetes cluster: `kubectl`, logged in to that cluster. The tool only reads from the cluster that `kubectl` points to now.
+- To use a real AI service: an API key from that service. Without a key, a built-in rule-based model runs and nothing leaves your computer.
+- To build from source: Go 1.21 or newer. It downloads the Go version this project needs by itself.
+- Optional: `git`, only if you want reports saved as Git commits.
+
+### Where the report goes
+
+The report is always shown on the screen. Two extras are optional and separate:
+
+- `--output FILE` (short form `-o`) also saves the report as a markdown file. If the value is an existing folder, or ends in `/`, a new file with a clear name is created inside it.
+- `--git` also commits the report to a Git repository and needs `git`. `--git-repo DIR` picks the repository and also turns `--git` on. With `--git` alone, the repository is `~/log-analyzer-incidents`.
+
+If saving or committing fails, a warning is printed. The report on the screen is still complete, and the exit code is not changed by the warning.
+
+### Your API key
+
+Best: keep the key in a file only you can read (`chmod 600`) and pass `--api-key-file`. In Kubernetes, use a Secret mounted as a file (the Helm chart does this). An environment variable also works, but it is not recommended for company use: anyone who can dump the environment, for example in a CI log or a debug dump, can read the key. The tool itself never prints the key.
+
+### Run it
 
 **1. Analyze a log file** (no cluster, no API key):
 
@@ -84,15 +105,14 @@ Requires Go 1.24 or newer and `git`. Live mode also needs `kubectl` access and a
 go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
 ```
 
-Secrets and email addresses are masked before anything is saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine. If the model service fails, the report still contains the rule-based part, says the model part is missing, and the command exits with an error.
+Secrets and email addresses are masked before anything is shown or saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine. If the model service fails, the report still contains the rule-based part, says the model part is missing, and the command exits with an error.
 
-The report is saved in `~/log-analyzer-incidents/.log-analyzer/incidents/`, its own small Git repo. Change the place with `--git-repo`.
+To also save the report: add `--output report.md` or `--git`.
 
 **2. Investigate a live cluster:**
 
 ```bash
-export GEMINI_API_KEY="your-key"     # or keep it in a file: --gemini-key-file=/path/to/key (safer, see docs/CONFIG.md)
-go run ./cmd/analyzer/main.go --namespace=production --service=payment-service \
+go run ./cmd/analyzer/main.go --api-key-file=/path/to/key --namespace=production --service=payment-service \
   --symptom="HTTP 504 and pods crashing" --since=2h
 ```
 
@@ -108,6 +128,8 @@ helm install inv1 deploy/helm/log-analyzer --set gemini.existingSecret=gemini-ke
   --set investigation.namespace=production --set investigation.service=payment-service
 kubectl logs -f job/inv1
 ```
+
+The Job prints the report to its log (`kubectl logs`) and also commits it to a Git repository inside the pod at `/data/incidents`.
 
 In live mode the chart mounts your Secret as a read-only file, not as an environment variable. The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
 
@@ -142,7 +164,7 @@ If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("ca
 
 ## What is in each report
 
-A file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
+The screen output and an `--output` file hold the same text: the issue, severity, root cause and recommendations. A Git commit holds a file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
 
 The AI puts each cause into one category from a fixed list (the list is in `internal/llm/model.go`), for example out of memory, bad settings, image pull failure, failing health check, database lock or no fault. If it cannot tell, it says so (`CANNOT_DETERMINE`) instead of guessing. If the model forgets to name a category, it is asked once; if it still gives none, the report says `CANNOT_DETERMINE`.
 

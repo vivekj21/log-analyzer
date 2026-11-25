@@ -16,12 +16,13 @@ import (
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
 	"k8s-log-analyzer/internal/redact"
+	"k8s-log-analyzer/internal/reportout"
 	"k8s-log-analyzer/internal/toolbox"
 )
 
 func main() {
 	var (
-		logFile      = flag.String("log-file", "", "Path to raw log file to analyze and stick into Git (offline or LLM-augmented)")
+		logFile      = flag.String("log-file", "", "Path to a raw log file to analyze (offline rules, plus a model service if a key is set)")
 		namespace    = flag.String("namespace", "default", "Kubernetes namespace to investigate")
 		service      = flag.String("service", "", "Target microservice/workload name (optional)")
 		symptom      = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
@@ -37,11 +38,14 @@ func main() {
 		caseID       = flag.String("case-id", "", "Case ID for recordings/replay naming (defaults to generated ID)")
 		dryRun       = flag.Bool("dry-run", false, "Execute kubectl in dry-run mode (logs commands instead of invoking cluster)")
 		timeout      = flag.Duration("timeout", 10*time.Minute, "Overall investigation timeout")
-		enableGit    = flag.Bool("git", true, "Stick diagnosed issues and post-mortems into Git")
-		gitRepo      = flag.String("git-repo", "", "Git repo for incident files (default: ~/log-analyzer-incidents)")
+		enableGit    = flag.Bool("git", false, "Also commit the report into a Git repository. Off by default. Needs git on your PATH. Giving --git-repo turns it on")
+		gitRepo      = flag.String("git-repo", "", "Git repository for the commit (default with --git: ~/log-analyzer-incidents). Giving this flag turns --git on")
+		output       = flag.String("output", "", "Also save the report as a markdown file. A folder (existing, or ending in /) gets a new, named file; any other value is the file to write")
 		createBranch = flag.Bool("branch", false, "Create a separate git branch for the incident (default false: commit to current branch)")
 	)
+	flag.StringVar(output, "o", "", "Short for --output")
 	flag.Parse()
+	gitOn := gitRequested(flagsSet(), *enableGit, *gitRepo)
 
 	if *modelName == "" {
 		*modelName = os.Getenv("LLM_MODEL")
@@ -99,19 +103,19 @@ func main() {
 	log.Println("      Autonomous K8s Root-Cause Deductor & Log Analysis System (Go)             ")
 	log.Println("================================================================================")
 
-	// Mode 1: Direct Raw Log File Analysis & Git Persistence
+	// Mode 1: Direct Raw Log File Analysis
 	if *logFile != "" {
 		logCfg := cfg
 		if *llmMode == "heuristic" || *llmMode == "replay" {
 			logCfg.APIKey = "" // these modes must never send anything to a model service, key or no key
 		}
-		if modelFailed := handleDirectLogFile(ctx, *logFile, *gitRepo, *enableGit, *createBranch, logCfg); modelFailed {
+		if modelFailed := handleDirectLogFile(ctx, *logFile, *gitRepo, *output, gitOn, *createBranch, logCfg); modelFailed {
 			os.Exit(1) // the report was written, but the model analysis you asked for is missing
 		}
 		return
 	}
 
-	// Mode 2: Multi-Agent Kubernetes Cluster Investigation & Git Persistence
+	// Mode 2: Multi-Agent Kubernetes Cluster Investigation
 	needsAPIKey := *llmMode == "live" || *llmMode == "record"
 	if needsAPIKey && apiKey == "" {
 		log.Fatalf("No API key found for provider %s. Required for --llm=%s. Use --api-key-file, or set LLM_API_KEY_FILE or LLM_API_KEY (or the provider's own variable: GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY), or use --llm=heuristic or --llm=replay.", *provider, *llmMode)
@@ -129,7 +133,10 @@ func main() {
 		log.Printf("Recordings Dir   : %s", *recordDir)
 	}
 	log.Printf("Dry-Run Mode     : %v", *dryRun)
-	log.Printf("Git Persistence  : %v (repo: %s)", *enableGit, *gitRepo)
+	log.Printf("Git commit       : %v", gitOn)
+	if *output != "" {
+		log.Printf("Save report to   : %s", *output)
+	}
 	log.Println("================================================================================")
 
 	// 1. Tool Schema & Default-Deny Allowlist
@@ -178,7 +185,7 @@ func main() {
 	fetcherAgent := agent.NewFetcherAgent(bus, executor, policy)
 	producerAgent := agent.NewProducerAgent(bus, toolRegistry, reportChan, fetcherAgent)
 	producerAgent.SetCreateBranch(*createBranch)
-	producerAgent.SetGitPersistence(*enableGit, *gitRepo)
+	producerAgent.SetGitPersistence(gitOn, *gitRepo)
 
 	analyzerAgent := agent.NewAnalyzerAgent(bus, model)
 	producerAgent.SetCleanup(func(id string) {
@@ -228,11 +235,41 @@ func main() {
 		log.Println("\n[System] Interrupted by user. Exiting...")
 		os.Exit(130)
 	case report := <-reportChan:
-		fmt.Println(report)
+		fmt.Println(report) // the report is always shown first
 		if strings.HasPrefix(report, "Investigation Failed") {
 			os.Exit(1)
 		}
+		if *output != "" {
+			saveReport(*output, "k8s "+*namespace+" "+*service, report)
+		}
 	}
+}
+
+// saveReport writes the report to a file. A failure prints one warning and the tool carries on:
+// the report was already shown, so nothing is lost.
+func saveReport(target, slug, content string) {
+	path, err := reportout.Save(target, slug, content, time.Now())
+	if err != nil {
+		log.Printf("[Output] WARNING: the report was NOT saved: %v. The report above is complete.", err)
+		return
+	}
+	log.Printf("[Output] Report saved to %s", path)
+}
+
+// flagsSet returns the names of the flags the user actually gave.
+func flagsSet() map[string]bool {
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	return set
+}
+
+// gitRequested says whether to commit the report to Git. Git is off unless asked for:
+// --git turns it on, giving --git-repo turns it on, and an explicit --git=false always wins.
+func gitRequested(set map[string]bool, gitFlag bool, repo string) bool {
+	if set["git"] {
+		return gitFlag
+	}
+	return set["git-repo"] && repo != ""
 }
 
 // envOr returns the environment variable's value, or def when it is unset or empty.
@@ -244,15 +281,16 @@ func envOr(name, def string) string {
 }
 
 // handleDirectLogFile analyzes one log file. It returns true if a model service was asked to help and failed:
-// the report is still written (with the rule-based part and a note), but the caller must exit non-zero.
-func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGit, createBranch bool, cfg llm.ProviderConfig) (modelFailed bool) {
+// the report is still shown (with the rule-based part and a note), but the caller must exit non-zero.
+// The report is printed first. Saving it to a file or to Git comes after and never stops the tool.
+func handleDirectLogFile(ctx context.Context, filePath, repoDir, outputPath string, enableGit, createBranch bool, cfg llm.ProviderConfig) (modelFailed bool) {
 	log.Printf("[LogReader] Reading log file: %s", filePath)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Fatalf("Failed to read log file %s: %v", filePath, err)
 	}
 
-	// Mask secrets and email addresses first: the text below goes to the model service (if a key is set) and into the Git report.
+	// Mask secrets and email addresses first: the text below goes to the model service (if a key is set) and into the report.
 	rawLogs := redact.Redact(string(content))
 	log.Printf("[LogReader] Ingested %d bytes of log data. Extracting issues...", len(rawLogs))
 
@@ -313,9 +351,17 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 		}
 	}
 
-	// 3. Stick in Git
+	// 3. Show the report. This always happens first, so the result is never lost.
+	fmt.Println(reportMarkdown)
+
+	// 4. Optional: save it as a markdown file. A failure only prints a warning.
+	if outputPath != "" {
+		saveReport(outputPath, issue.Title, reportMarkdown)
+	}
+
+	// 5. Optional: commit it to Git. A failure only prints a warning.
 	if enableGit {
-		log.Printf("[GitAgent] Sticking diagnosed issue into Git repository at %s...", repoDir)
+		log.Printf("[GitAgent] Committing the report to the Git repository at %s...", repoDir)
 		gitConfig := agent.DefaultGitAgentConfig()
 		gitConfig.RepoDir = repoDir
 		gitConfig.CreateBranch = createBranch
@@ -336,20 +382,10 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir string, enableGi
 
 		res, err := gitAgent.PersistIssue(ctx, req)
 		if err != nil {
-			log.Fatalf("Failed to stick issue in Git: %v", err)
+			log.Printf("[GitAgent] WARNING: the report was NOT committed to Git: %v. The report above is complete.", err)
+		} else {
+			log.Printf("[GitAgent] Committed. File: %s  Commit: %s  Branch: %s", res.FilePath, res.CommitHash, res.Branch)
 		}
-
-		fmt.Println("\n╔══════════════════════════════════════════════════════════════════╗")
-		fmt.Println("║       LOG ANALYSIS COMPLETE — ISSUE COMMITTED TO GIT             ║")
-		fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
-		fmt.Printf("Incident File  : %s\n", res.FilePath)
-		fmt.Printf("Git Commit SHA : %s\n", res.CommitHash)
-		fmt.Printf("Git Branch     : %s\n", res.Branch)
-		fmt.Printf("Severity       : %s\n", issue.Severity)
-		fmt.Printf("Root Cause     : %s\n", issue.RootCause)
-		fmt.Println("════════════════════════════════════════════════════════════════════")
-	} else {
-		fmt.Println("\n" + reportMarkdown)
 	}
 	return modelFailed
 }

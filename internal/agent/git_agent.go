@@ -385,6 +385,11 @@ func appendSignature(list []string, sig string) []string {
 
 // PersistIssue creates a markdown incident post-mortem and commits it into the Git repository.
 func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequestPayload) (*PersistResult, error) {
+	// Check for git first, so a missing git gives one clear message and creates nothing on disk.
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, fmt.Errorf("git is not installed or not on PATH. Install git, or leave out --git and --git-repo")
+	}
+
 	repoDir := req.RepoDir
 	if repoDir == "" {
 		repoDir = g.config.RepoDir

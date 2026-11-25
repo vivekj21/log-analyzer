@@ -30,7 +30,7 @@ Masking is pattern-based, so it is a safety net, not a guarantee.
 If your logs can contain personal data of that kind, use the rule-based mode or do not send them.
 
 ## What is stored
-The incident report is committed to a Git repo (`--git-repo`; in the Helm chart `/data/incidents`, which is lost when the pod is deleted unless `storage.persistence=true`). It holds the symptom, the AI's conclusion, and up to 10,000 characters of masked evidence. Record mode (used for tests) also saves the model conversation to local files; treat those as sensitive.
+By default the report is only shown on the screen and nothing is stored. With `--output` it is also saved as a file (the same text as on the screen). With `--git` or `--git-repo` it is also committed to a Git repo. A Git commit holds the symptom, the AI's conclusion, and up to 10,000 characters of masked evidence. In the Helm chart the Job commits to `/data/incidents`, which is lost when the pod is deleted unless `storage.persistence=true`; the report is also in the pod log. Record mode (used for tests) also saves the model conversation to local files; treat those as sensitive.
 
 ## What never leaves
 The API key is read from a file (best) or an environment variable and used only to sign in to the API. It is never logged, and the `kubectl` processes the tool starts do not receive it. In the Helm chart it is mounted as a read-only file, not an environment variable. Cluster access uses the pod's Kubernetes service account, with read-only permissions, and those credentials are not part of what is sent.

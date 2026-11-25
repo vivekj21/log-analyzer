@@ -14,11 +14,20 @@
 | `GEMINI_API_KEY_FILE` | environment | none | Older name for `LLM_API_KEY_FILE`; only with `--provider=gemini`. |
 | `GEMINI_API_KEY` | environment | none | Gemini key as plain text. Simple, but easier to leak than a file. Never put it in code. |
 | `GEMINI_MODEL` | environment | see `internal/llm/defaults.go` | Model name. `--model` overrides it. |
+| `--output`, `-o` | flag | none | Also save the report as a markdown file. An existing folder, or a value ending in `/`, gets a new named file; any other value is the file to write (replaced if it exists). The report is always shown on the screen too. |
+| `--git` | flag | off | Also commit the report to a Git repository. Needs `git` on your PATH. `--git=false` always wins. |
+| `--git-repo` | flag | `~/log-analyzer-incidents` (with `--git`) | The Git repository for the commit. Giving this flag turns `--git` on. |
+| `--branch` | flag | off | Commit on a new branch for each incident instead of the current branch. |
 | `LOG_ANALYZER_MAX_CALLS` | environment | 30 | Model calls per investigation. |
 | `LOG_ANALYZER_MAX_TOKENS` | environment | 400000 | Tokens per investigation. |
 | `LOG_ANALYZER_MAX_TOTAL_TOKENS` | environment | 4000000 | Tokens per process. |
 | `LOG_ANALYZER_BREAKER_FAILURES` | environment | 5 | Failed calls in a row before pausing. |
 | `LOG_ANALYZER_BREAKER_COOLDOWN_SECONDS` | environment | 60 | Length of the pause. |
+
+## Where the report goes
+The report is always shown on the screen (standard output). Messages and warnings go to standard error, so `analyzer ... > report.md` holds only the report.
+
+Saving is optional: `--output` writes a markdown file, and `--git` or `--git-repo` commits to Git. If either fails (no `git` installed, a folder that cannot be written), one warning is printed, the report on the screen stays complete, and the warning does not change the exit code.
 
 ## Where the key comes from
 Checked in this order; the first one that has a key wins:
