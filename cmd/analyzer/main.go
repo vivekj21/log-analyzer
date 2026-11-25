@@ -44,6 +44,11 @@ func main() {
 		createBranch = flag.Bool("branch", false, "Create a separate git branch for the incident (default false: commit to current branch)")
 	)
 	flag.StringVar(output, "o", "", "Short for --output")
+	flag.Usage = usage
+	if noArguments() {
+		fmt.Fprint(os.Stderr, noArgumentsNote)
+		os.Exit(2)
+	}
 	flag.Parse()
 	gitOn := gitRequested(flagsSet(), *enableGit, *gitRepo)
 
@@ -239,21 +244,43 @@ func main() {
 		if strings.HasPrefix(report, "Investigation Failed") {
 			os.Exit(1)
 		}
-		if *output != "" {
-			saveReport(*output, "k8s "+*namespace+" "+*service, report)
+		sum := runSummary{
+			SentToModel: (*llmMode == "live" || *llmMode == "record") && apiKey != "",
+			Provider:    *provider, Model: *modelName,
+			OutputAsked: *output != "",
 		}
+		if *output != "" {
+			sum.OutputPath, sum.OutputFailed = saveReport(*output, "k8s "+*namespace+" "+*service, report)
+		}
+		// In cluster mode the Git result is written into the report text by the Producer.
+		switch {
+		case strings.Contains(report, "[GitOps] ✔"):
+			sum.Git, sum.GitDetail = gitCommitted, "(details in the report above)"
+		case strings.Contains(report, "[GitOps] ⚠"):
+			sum.Git = gitFailed
+		}
+		fmt.Fprint(os.Stderr, sum)
 	}
 }
 
-// saveReport writes the report to a file. A failure prints one warning and the tool carries on:
-// the report was already shown, so nothing is lost.
-func saveReport(target, slug, content string) {
+// saveReport writes the report to a file and returns the path, or failed=true. A failure prints one
+// warning and the tool carries on: the report was already shown, so nothing is lost.
+func saveReport(target, slug, content string) (path string, failed bool) {
 	path, err := reportout.Save(target, slug, content, time.Now())
 	if err != nil {
 		log.Printf("[Output] WARNING: the report was NOT saved: %v. The report above is complete.", err)
-		return
+		return "", true
 	}
 	log.Printf("[Output] Report saved to %s", path)
+	return path, false
+}
+
+// shortHash shortens a commit hash for display.
+func shortHash(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
 }
 
 // flagsSet returns the names of the flags the user actually gave.
@@ -355,8 +382,14 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir, outputPath stri
 	fmt.Println(reportMarkdown)
 
 	// 4. Optional: save it as a markdown file. A failure only prints a warning.
+	sum := runSummary{
+		SentToModel: cfg.APIKey != "",
+		ModelFailed: modelFailed,
+		Provider:    cfg.Provider, Model: cfg.Model,
+		OutputAsked: outputPath != "",
+	}
 	if outputPath != "" {
-		saveReport(outputPath, issue.Title, reportMarkdown)
+		sum.OutputPath, sum.OutputFailed = saveReport(outputPath, issue.Title, reportMarkdown)
 	}
 
 	// 5. Optional: commit it to Git. A failure only prints a warning.
@@ -383,10 +416,14 @@ func handleDirectLogFile(ctx context.Context, filePath, repoDir, outputPath stri
 		res, err := gitAgent.PersistIssue(ctx, req)
 		if err != nil {
 			log.Printf("[GitAgent] WARNING: the report was NOT committed to Git: %v. The report above is complete.", err)
+			sum.Git = gitFailed
 		} else {
 			log.Printf("[GitAgent] Committed. File: %s  Commit: %s  Branch: %s", res.FilePath, res.CommitHash, res.Branch)
+			sum.Git = gitCommitted
+			sum.GitDetail = fmt.Sprintf("%s (commit %s)", res.FilePath, shortHash(res.CommitHash))
 		}
 	}
+	fmt.Fprint(os.Stderr, sum)
 	return modelFailed
 }
 

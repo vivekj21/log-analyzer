@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -304,5 +305,105 @@ func TestGitRequested(t *testing.T) {
 		if got := gitRequested(c.set, c.git, c.repo); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestNoteGoesToStderrAndStdoutStaysClean(t *testing.T) {
+	e := newEnv(t)
+	r := e.logRun(t, e.noGit)
+	if strings.Contains(r.stdout, "Where things went") {
+		t.Fatal("the note must not be on stdout: `analyzer > report.md` must hold only the report")
+	}
+	for _, want := range []string{"Where things went", "--output report.md", "--git-repo", "No log text was sent anywhere", "--help"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Fatalf("note is missing %q:\n%s", want, r.stderr)
+		}
+	}
+}
+
+func TestNoteSaysWhereTheFileWent(t *testing.T) {
+	e := newEnv(t)
+	target := filepath.Join(e.work, "kept.md")
+	r := e.logRun(t, e.noGit, "-o", target)
+	if !strings.Contains(r.stderr, "saved to "+target) || strings.Contains(r.stderr, "To keep a copy") {
+		t.Fatalf("note should name the file and not suggest --output again:\n%s", r.stderr)
+	}
+}
+
+func TestNoteSaysGitWasNotCommittedWhenGitIsMissing(t *testing.T) {
+	e := newEnv(t)
+	r := e.logRun(t, e.noGit, "--git")
+	if !strings.Contains(r.stderr, "NOT committed (see the warning above)") {
+		t.Fatalf("note must say the commit did not happen:\n%s", r.stderr)
+	}
+}
+
+func TestNoteSaysWhichCommitWasMade(t *testing.T) {
+	path := needGit(t)
+	e := newEnv(t)
+	r := e.logRun(t, path, "--git-repo", filepath.Join(e.work, "repo"))
+	if !regexp.MustCompile(`committed .*\.md \(commit [0-9a-f]{7}\)`).MatchString(r.stderr) {
+		t.Fatalf("note should name the file and a short commit:\n%s", r.stderr)
+	}
+}
+
+func TestNoteAdmitsTheModelServiceWasContacted(t *testing.T) {
+	e := newEnv(t)
+	keyFile := filepath.Join(e.work, "key")
+	os.WriteFile(keyFile, []byte("fake-key\n"), 0o600)
+	// A local address with nothing listening: the model call fails fast.
+	r := e.logRun(t, e.noGit, "--llm", "live", "--provider", "openai", "--model", "m", "--base-url", "http://127.0.0.1:1", "--api-key-file", keyFile)
+	if r.code != 1 {
+		t.Fatalf("a failed model call must exit 1, got %d\n%s", r.code, r.stderr)
+	}
+	mustHaveReport(t, r)
+	if !strings.Contains(r.stderr, "tried to send the log text to openai (m)") {
+		t.Fatalf("the privacy line must admit the attempt:\n%s", r.stderr)
+	}
+	if strings.Contains(r.stderr, "No log text was sent anywhere") {
+		t.Fatal("must not claim nothing was sent")
+	}
+}
+
+func TestNoArgumentsExplainsInsteadOfFailingOddly(t *testing.T) {
+	e := newEnv(t)
+	r := run(t, e.work, e.home, e.noGit)
+	if r.code != 2 {
+		t.Fatalf("exit %d, want 2", r.code)
+	}
+	for _, want := range []string{"Nothing to analyze yet", "--log-file app.log", "--help"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Fatalf("missing %q:\n%s", want, r.stderr)
+		}
+	}
+	if strings.Contains(r.stderr, "API key") {
+		t.Fatal("a newcomer should not be told about API keys first")
+	}
+}
+
+// Every flag defined in main.go must appear in --help, so help can never fall behind.
+func TestHelpListsEveryFlag(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`flag\.(?:String|Bool|Duration|Int)\("([a-z-]+)"`)
+	names := re.FindAllStringSubmatch(string(src), -1)
+	if len(names) < 15 {
+		t.Fatalf("expected to find the flags in main.go, found %d", len(names))
+	}
+	e := newEnv(t)
+	r := run(t, e.work, e.home, e.noGit, "--help")
+	if r.code != 0 {
+		t.Fatalf("--help exit %d", r.code)
+	}
+	help := r.stdout + r.stderr
+	for _, m := range names {
+		if !strings.Contains(help, "--"+m[1]) {
+			t.Errorf("flag --%s is not described in --help", m[1])
+		}
+	}
+	if !strings.Contains(help, "-o FILE") {
+		t.Error("short flag -o is not in --help")
 	}
 }

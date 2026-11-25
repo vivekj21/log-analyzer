@@ -29,6 +29,8 @@ The report is always shown on the screen (standard output). Messages and warning
 
 Saving is optional: `--output` writes a markdown file, and `--git` or `--git-repo` commits to Git. If either fails (no `git` installed, a folder that cannot be written), one warning is printed, the report on the screen stays complete, and the warning does not change the exit code.
 
+At the end of every run a short note, also on standard error, says where things went: the report, the file, the Git commit, and whether any log text was sent to a model service. It suggests `--output` or `--git-repo` only when you did not use them. Running the program with no arguments prints a short "how to start" message and exits with code 2. `--help` lists every flag, grouped by purpose.
+
 ## Where the key comes from
 Checked in this order; the first one that has a key wins:
 1. `--api-key-file`

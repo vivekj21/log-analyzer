@@ -76,49 +76,93 @@ sequenceDiagram
 
 ## Quick start
 
-### What you need
+Read this part top to bottom. Each step adds one thing, and every step after the first is optional.
 
-- To analyze a log file: nothing else beyond the tool itself.
-- To investigate a Kubernetes cluster: `kubectl`, logged in to that cluster. The tool only reads from the cluster that `kubectl` points to now.
-- To use a real AI service: an API key from that service. Without a key, a built-in rule-based model runs and nothing leaves your computer.
-- To build from source: Go 1.21 or newer. It downloads the Go version this project needs by itself.
-- Optional: `git`, only if you want reports saved as Git commits.
+**Before you start.** To run from source you need Go 1.21 or newer (it downloads the exact Go version this project needs by itself). Nothing else is needed for step 1. Later steps need: `kubectl` for a live cluster, an API key for a real AI model, `git` only if you want reports committed to Git.
 
-### Where the report goes
+### 1. Try it in one minute
 
-The report is always shown on the screen. Two extras are optional and separate:
-
-- `--output FILE` (short form `-o`) also saves the report as a markdown file. If the value is an existing folder, or ends in `/`, a new file with a clear name is created inside it.
-- `--git` also commits the report to a Git repository and needs `git`. `--git-repo DIR` picks the repository and also turns `--git` on. With `--git` alone, the repository is `~/log-analyzer-incidents`.
-
-If saving or committing fails, a warning is printed. The report on the screen is still complete, and the exit code is not changed by the warning.
-
-### Your API key
-
-Best: keep the key in a file only you can read (`chmod 600`) and pass `--api-key-file`. In Kubernetes, use a Secret mounted as a file (the Helm chart does this). An environment variable also works, but it is not recommended for company use: anyone who can dump the environment, for example in a CI log or a debug dump, can read the key. The tool itself never prints the key.
-
-### Run it
-
-**1. Analyze a log file** (no cluster, no API key):
+You need only a log file. Nothing is installed, saved or sent anywhere:
 
 ```bash
-go run ./cmd/analyzer/main.go --log-file=/path/to/app.log
+go run ./cmd/analyzer --log-file=app.log
 ```
 
-Secrets and email addresses are masked before anything is shown or saved. If a model API key is set, the (masked) log text is also sent to that model service, unless you add `--llm heuristic`. With no key, nothing leaves your machine. If the model service fails, the report still contains the rule-based part, says the model part is missing, and the command exits with an error.
+You get the report on the screen, then a short note on standard error that says where everything went. This is real output for a small sample log:
 
-To also save the report: add `--output report.md` or `--git`.
+```
+## Autonomous Log Analysis
+- **Diagnosed Issue:** Container Termination via OOM (Out Of Memory)
+- **Severity:** P0
+- **Root Cause Deduction:** Application memory usage exceeded Kubernetes pod resource limits or JVM/Runtime max heap.
 
-**2. Investigate a live cluster:**
+### Remediation Guidance
+1. Increase Kubernetes memory request/limit in pod deployment specification.
+...
+----------------------------------------------------------------------
+Where things went
+  Report : shown above (this is the main result)
+  File   : not saved. To keep a copy, add: --output report.md
+  Git    : not committed. To commit it, add: --git-repo ~/incidents
+  Privacy: the analysis ran on this computer. No log text was sent anywhere.
+All options: run with --help
+----------------------------------------------------------------------
+```
+
+The note appears after every run and only suggests what you did not already use. Because the note goes to standard error, `analyzer --log-file app.log > report.md` writes only the report into the file. Run `analyzer --help` for all options, grouped by purpose.
+
+### 2. Keep the results (optional)
+
+The report is always shown on the screen. Saving it is your choice:
+
+| I want to | Add this | Needs |
+|---|---|---|
+| keep a copy as a markdown file | `--output report.md` (or `-o`) | nothing |
+| keep copies in a folder, one new file per run | `--output reports/` | nothing |
+| commit the report to a Git repository | `--git-repo ~/incidents` | `git` installed |
+| commit to the default repository, `~/log-analyzer-incidents` | `--git` | `git` installed |
+| commit on a separate branch per incident | `--git-repo ~/incidents --branch` | `git` installed |
+
+- A folder (an existing one, or a value ending in `/`) gets a new, named file each time and never overwrites an older one. Any other value is the exact file to write, and it is replaced if it exists.
+- `--git-repo` also turns `--git` on. If the folder is not yet a Git repository, it is set up for you. `--git=false` always wins.
+- If saving or committing fails (for example `git` is not installed), you get one clear warning, the report on the screen is still complete, and the warning does not change the exit code. The note at the end says "NOT saved" or "NOT committed" so you cannot miss it.
+
+### 3. Use a real AI model (optional)
+
+Without a key, built-in rules analyze the log and nothing leaves your computer. With a key, masked log text is also sent to the model service you choose, and the note at the end names it. To keep a run on your computer even with a key set, add `--llm heuristic`.
+
+**Your API key.** Best: keep the key in a file only you can read (`chmod 600`) and pass `--api-key-file`. In Kubernetes, use a Secret mounted as a file (the Helm chart does this). An environment variable also works, but it is not recommended for company use: anyone who can dump the environment, for example in a CI log or a debug dump, can read the key. The tool itself never prints the key.
+
+Secrets and email addresses are masked before anything is shown, saved or sent. If the model service fails, the report still contains the rule-based part, says the model part is missing, and the command exits with an error.
+
+**Which AI model?** You choose; nothing is tied to one company:
 
 ```bash
-go run ./cmd/analyzer/main.go --api-key-file=/path/to/key --namespace=production --service=payment-service \
+# Gemini (default)
+go run ./cmd/analyzer --namespace=production --gemini-key-file="$HOME/.keys/gemini"
+# Any OpenAI-compatible service: OpenAI, Groq, OpenRouter, Mistral, or Ollama on your own machine
+go run ./cmd/analyzer --namespace=production --provider=openai --base-url=https://api.groq.com/openai/v1 --model=<model name> --api-key-file="$HOME/.keys/groq"
+# Claude
+go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model name> --api-key-file="$HOME/.keys/anthropic"
+```
+
+Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
+Status: Gemini and Groq (model `openai/gpt-oss-120b`) are tested against the real services; see [accuracy/RESULTS.md](accuracy/RESULTS.md). The Anthropic client is so far tested only against a local fake server.
+
+### 4. Investigate a live Kubernetes cluster (optional)
+
+Needs `kubectl`, logged in to that cluster. The tool only reads from the cluster that `kubectl` points to now, and only with read-only commands.
+
+```bash
+go run ./cmd/analyzer --api-key-file=/path/to/key --namespace=production --service=payment-service \
   --symptom="HTTP 504 and pods crashing" --since=2h
 ```
 
-Add `--dry-run` to print the `kubectl` commands instead of running them.
+Add `--dry-run` to print the `kubectl` commands instead of running them. Everything from step 2 (`--output`, `--git-repo`) works here too.
 
-**3. Run it inside Kubernetes:**
+### 5. Run it inside Kubernetes (optional)
+
+
 
 ```bash
 make docker-build            # push the image to a registry your cluster can reach
@@ -144,19 +188,7 @@ make helm-k3d    # builds the image, installs the Helm chart, checks the result
 
 Both create their own cluster and delete it afterwards. To run the chart with real Gemini instead (uses a little of your free quota): `GEMINI_API_KEY=... make helm-k3d-live`.
 
-**Which AI model?** You choose; nothing is tied to one company:
-
-```bash
-# Gemini (default)
-go run ./cmd/analyzer --namespace=production --gemini-key-file="$HOME/.keys/gemini"
-# Any OpenAI-compatible service: OpenAI, Groq, OpenRouter, Mistral, or Ollama on your own machine
-go run ./cmd/analyzer --namespace=production --provider=openai --base-url=https://api.groq.com/openai/v1 --model=<model name> --api-key-file="$HOME/.keys/groq"
-# Claude
-go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model name> --api-key-file="$HOME/.keys/anthropic"
-```
-
-Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
-Status: Gemini and Groq (model `openai/gpt-oss-120b`) are tested against the real services; see [accuracy/RESULTS.md](accuracy/RESULTS.md). The Anthropic client is so far tested only against a local fake server.
+### 6. Check how accurate it is
 
 **How accurate is it?** `make accuracy` runs small broken apps with known causes through the rule-based model and through each model service you list (`ACC_MODELS`, see the top of `scripts/accuracy.sh`), then writes the scorecard to [accuracy/RESULTS.md](accuracy/RESULTS.md), including what it does not prove. It needs the same setup as above; add `GEMINI_API_KEY` to include Gemini. The cases are split into a **dev** set (used while tuning) and a **held-out** set (never tuned against); the scorecard reports them separately. A case only counts if its fault really showed up in the cluster, and a right answer must also name the evidence. To run only some cases, one set, or to repeat each one and see how stable the answers are, set `ACC_CASES`, `ACC_SET` and `ACC_REPEAT` (also described at the top of `scripts/accuracy.sh`). `make validate-cases` checks the test apps themselves, without any model or key. How the cases work: [accuracy/README.md](accuracy/README.md).
 
@@ -195,7 +227,9 @@ Go, any of: Gemini, an OpenAI-compatible service (OpenAI, Groq, OpenRouter, Mist
 | `GEMINI_MODEL` or `--model` | Model name; the default is in `internal/llm/defaults.go` |
 | `LOG_ANALYZER_MAX_CALLS`, `LOG_ANALYZER_MAX_TOKENS`, `LOG_ANALYZER_MAX_TOTAL_TOKENS` | Cost limits; 0 turns one off |
 
-All settings: [docs/CONFIG.md](docs/CONFIG.md)
+All settings: [docs/CONFIG.md](docs/CONFIG.md), or run `analyzer --help`. Output options (`--output`, `--git`, `--git-repo`, `--branch`) are in Quick start step 2.
+
+**Where to read next:** [docs/CONFIG.md](docs/CONFIG.md) (every setting) → [docs/DATA-FLOW.md](docs/DATA-FLOW.md) (what leaves your computer, and what is stored) → [docs/SECURITY.md](docs/SECURITY.md) (how it is kept safe) → [docs/ROADMAP.md](docs/ROADMAP.md) (what is planned).
 
 ## Develop
 
