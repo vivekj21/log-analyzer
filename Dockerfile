@@ -1,5 +1,5 @@
 # Build on the fast build machine and cross-compile for the target (amd64 or arm64).
-FROM --platform=$BUILDPLATFORM golang:1.26.11 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
