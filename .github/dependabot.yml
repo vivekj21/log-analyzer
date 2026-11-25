@@ -1,11 +1,18 @@
 version: 2
 updates:
+  # Related Go updates arrive as ONE pull request (they often need each other).
   - package-ecosystem: gomod
     directory: /
     schedule: {interval: weekly}
+    groups:
+      go-dependencies:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
+    groups:
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly}
