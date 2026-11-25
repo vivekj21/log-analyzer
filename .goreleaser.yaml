@@ -1,0 +1,61 @@
+# Release build. Run by .github/workflows/release.yml on a version tag (v1.2.3), and in a
+# build-only form on every pull request (see ci.yml), so a broken release is found early.
+version: 2
+project_name: log-analyzer
+
+builds:
+  - id: log-analyzer
+    main: ./cmd/analyzer
+    binary: log-analyzer
+    env:
+      - CGO_ENABLED=0 # one static file; nothing else to install
+    flags:
+      - -trimpath # no build-machine paths inside the program
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}" # same commit, same bytes
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Keyless signature (Sigstore) over the checksums file. The checksums file lists every archive,
+# so one signature covers all downloads.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
+    output: true
+
+# A software bill of materials for each archive (needs syft, installed by the release workflow).
+sboms:
+  - artifacts: archive
+
+release:
+  prerelease: auto # tags like v0.1.0-rc1 are published as pre-releases
+  footer: |
+    ## Check your download
+    Every file is listed in `checksums.txt`, which is signed and has a build-provenance attestation.
+    How to check: see "Verify a download" in the [README](https://github.com/{{ .Env.GITHUB_REPOSITORY }}#verify-a-download).

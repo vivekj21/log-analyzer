@@ -25,7 +25,7 @@
 | `LOG_ANALYZER_BREAKER_COOLDOWN_SECONDS` | environment | 60 | Length of the pause. |
 
 ## Where the report goes
-The report is always shown on the screen (standard output). Messages and warnings go to standard error, so `analyzer ... > report.md` holds only the report.
+The report is always shown on the screen (standard output). Messages and warnings go to standard error, so `log-analyzer ... > report.md` holds only the report.
 
 Saving is optional: `--output` writes a markdown file, and `--git` or `--git-repo` commits to Git. If either fails (no `git` installed, a folder that cannot be written), one warning is printed, the report on the screen stays complete, and the warning does not change the exit code.
 

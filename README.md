@@ -78,14 +78,36 @@ sequenceDiagram
 
 Read this part top to bottom. Each step adds one thing, and every step after the first is optional.
 
-**Before you start.** To run from source you need Go 1.21 or newer (it downloads the exact Go version this project needs by itself). Nothing else is needed for step 1. Later steps need: `kubectl` for a live cluster, an API key for a real AI model, `git` only if you want reports committed to Git.
+### 0. Get the program
+
+**Option A: download it (easiest).** Open the [Releases page](https://github.com/vivekj21/log-analyzer/releases), choose the newest version, and download the one file for your computer:
+
+| Your computer | File to download |
+|---|---|
+| Windows | `log-analyzer_<version>_windows_amd64.zip` |
+| Mac with an Apple chip (M1 or newer) | `log-analyzer_<version>_darwin_arm64.tar.gz` |
+| Mac with an Intel chip | `log-analyzer_<version>_darwin_amd64.tar.gz` |
+| Linux (Intel or AMD) | `log-analyzer_<version>_linux_amd64.tar.gz` |
+| Linux (ARM) | `log-analyzer_<version>_linux_arm64.tar.gz` |
+
+Unpack it. You get one program: `log-analyzer` (`log-analyzer.exe` on Windows). Nothing else needs installing. Check that it works: `log-analyzer --version`.
+
+Your computer may warn about a program from an unknown publisher, because these programs are not signed with a paid developer certificate. That is expected. To be sure the file is the real one, [verify the download](#verify-a-download).
+- Windows: choose "More info", then "Run anyway".
+- Mac: if it says the developer cannot be verified, run `xattr -d com.apple.quarantine ./log-analyzer` once.
+
+**Option B: run it from source.** You need Go 1.21 or newer (it downloads the exact Go version this project needs by itself). Use `go run ./cmd/analyzer` wherever the examples below say `log-analyzer`.
+
+> **Status:** the first release is being prepared. Until it is on the Releases page, use option B.
+
+**Other things you may need later:** `kubectl`, logged in to the cluster, for a live cluster (step 4). An API key for a real AI model (step 3). `git`, only if you want reports committed to Git (step 2).
 
 ### 1. Try it in one minute
 
 You need only a log file. Nothing is installed, saved or sent anywhere:
 
 ```bash
-go run ./cmd/analyzer --log-file=app.log
+log-analyzer --log-file=app.log
 ```
 
 You get the report on the screen, then a short note on standard error that says where everything went. This is real output for a small sample log:
@@ -109,7 +131,7 @@ All options: run with --help
 ----------------------------------------------------------------------
 ```
 
-The note appears after every run and only suggests what you did not already use. Because the note goes to standard error, `analyzer --log-file app.log > report.md` writes only the report into the file. Run `analyzer --help` for all options, grouped by purpose.
+The note appears after every run and only suggests what you did not already use. Because the note goes to standard error, `log-analyzer --log-file app.log > report.md` writes only the report into the file. Run `log-analyzer --help` for all options, grouped by purpose.
 
 ### 2. Keep the results (optional)
 
@@ -139,11 +161,11 @@ Secrets and email addresses are masked before anything is shown, saved or sent. 
 
 ```bash
 # Gemini (default)
-go run ./cmd/analyzer --namespace=production --gemini-key-file="$HOME/.keys/gemini"
+log-analyzer --namespace=production --gemini-key-file="$HOME/.keys/gemini"
 # Any OpenAI-compatible service: OpenAI, Groq, OpenRouter, Mistral, or Ollama on your own machine
-go run ./cmd/analyzer --namespace=production --provider=openai --base-url=https://api.groq.com/openai/v1 --model=<model name> --api-key-file="$HOME/.keys/groq"
+log-analyzer --namespace=production --provider=openai --base-url=https://api.groq.com/openai/v1 --model=<model name> --api-key-file="$HOME/.keys/groq"
 # Claude
-go run ./cmd/analyzer --namespace=production --provider=anthropic --model=<model name> --api-key-file="$HOME/.keys/anthropic"
+log-analyzer --namespace=production --provider=anthropic --model=<model name> --api-key-file="$HOME/.keys/anthropic"
 ```
 
 Model names change often, so only Gemini has a built-in default. Base addresses must use https (or localhost); see [docs/CONFIG.md](docs/CONFIG.md).
@@ -154,7 +176,7 @@ Status: Gemini and Groq (model `openai/gpt-oss-120b`) are tested against the rea
 Needs `kubectl`, logged in to that cluster. The tool only reads from the cluster that `kubectl` points to now, and only with read-only commands.
 
 ```bash
-go run ./cmd/analyzer --api-key-file=/path/to/key --namespace=production --service=payment-service \
+log-analyzer --api-key-file=/path/to/key --namespace=production --service=payment-service \
   --symptom="HTTP 504 and pods crashing" --since=2h
 ```
 
@@ -194,6 +216,33 @@ Both create their own cluster and delete it afterwards. To run the chart with re
 
 If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
+## Verify a download
+
+Each release has a file `checksums.txt` that lists every download with its fingerprint. Three checks, from simple to strong. Do at least the first one.
+
+1. **Is the file complete and unchanged?** Compute the fingerprint and compare it with the line for your file in `checksums.txt`.
+   - Linux: `sha256sum <file>`
+   - Mac: `shasum -a 256 <file>`
+   - Windows (PowerShell): `Get-FileHash .\<file> -Algorithm SHA256`
+2. **Did this project publish `checksums.txt`?** It is signed. With [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) installed, download `checksums.txt` and `checksums.txt.sigstore.json` from the same release and run:
+   ```bash
+   cosign verify-blob --bundle checksums.txt.sigstore.json \
+     --certificate-identity-regexp '^https://github.com/vivekj21/log-analyzer/\.github/workflows/release\.yml@refs/tags/v' \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+   ```
+   It prints `Verified OK`.
+3. **Was it built by this project's release workflow, from a known commit?** With the [GitHub CLI](https://cli.github.com/) installed: `gh attestation verify <file> --repo vivekj21/log-analyzer`.
+
+The container image `ghcr.io/vivekj21/log-analyzer` (Linux, Intel/AMD and ARM) is signed the same way:
+
+```bash
+cosign verify ghcr.io/vivekj21/log-analyzer:<version> \
+  --certificate-identity-regexp '^https://github.com/vivekj21/log-analyzer/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Each archive also comes with a software bill of materials (`*.sbom.json`) that lists what is inside.
+
 ## What is in each report
 
 The screen output and an `--output` file hold the same text: the issue, severity, root cause and recommendations. A Git commit holds a file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
@@ -227,7 +276,7 @@ Go, any of: Gemini, an OpenAI-compatible service (OpenAI, Groq, OpenRouter, Mist
 | `GEMINI_MODEL` or `--model` | Model name; the default is in `internal/llm/defaults.go` |
 | `LOG_ANALYZER_MAX_CALLS`, `LOG_ANALYZER_MAX_TOKENS`, `LOG_ANALYZER_MAX_TOTAL_TOKENS` | Cost limits; 0 turns one off |
 
-All settings: [docs/CONFIG.md](docs/CONFIG.md), or run `analyzer --help`. Output options (`--output`, `--git`, `--git-repo`, `--branch`) are in Quick start step 2.
+All settings: [docs/CONFIG.md](docs/CONFIG.md), or run `log-analyzer --help`. Output options (`--output`, `--git`, `--git-repo`, `--branch`) are in Quick start step 2.
 
 **Where to read next:** [docs/CONFIG.md](docs/CONFIG.md) (every setting) → [docs/DATA-FLOW.md](docs/DATA-FLOW.md) (what leaves your computer, and what is stored) → [docs/SECURITY.md](docs/SECURITY.md) (how it is kept safe) → [docs/ROADMAP.md](docs/ROADMAP.md) (what is planned).
 
@@ -239,6 +288,8 @@ make hooks        # run it before every git push
 make check-model  # can my key use this model?
 make eval-live    # re-run the attack tests on the current model (costs money)
 ```
+
+The Go code is built and tested on Linux, macOS and Windows on every change. The shell tooling (`Makefile`, `scripts/*.sh`) needs Linux, macOS or WSL (Windows Subsystem for Linux), so develop there. Releases are described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Project layout
 

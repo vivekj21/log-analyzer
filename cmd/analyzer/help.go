@@ -10,14 +10,14 @@ const helpText = `log-analyzer finds the likely root cause of an incident, from 
 Kubernetes cluster. The report is always shown on the screen. Saving it is optional.
 
 USAGE
-  analyzer --log-file FILE [options]       analyze a log file (no cluster needed)
-  analyzer --namespace NAME [options]      investigate a Kubernetes cluster (needs kubectl)
+  log-analyzer --log-file FILE [options]       analyze a log file (no cluster needed)
+  log-analyzer --namespace NAME [options]      investigate a Kubernetes cluster (needs kubectl)
 
 EXAMPLES
-  analyzer --log-file app.log                          try it: nothing is saved, nothing is sent
-  analyzer --log-file app.log --output report.md       also keep a copy as a file
-  analyzer --log-file app.log --git-repo ~/incidents   also commit it to a Git repository
-  analyzer --namespace shop --service cart --api-key-file ~/.keys/gemini
+  log-analyzer --log-file app.log                          try it: nothing is saved, nothing is sent
+  log-analyzer --log-file app.log --output report.md       also keep a copy as a file
+  log-analyzer --log-file app.log --git-repo ~/incidents   also commit it to a Git repository
+  log-analyzer --namespace shop --service cart --api-key-file ~/.keys/gemini
 
 WHAT TO ANALYZE
   --log-file FILE      a raw log file to analyze
@@ -43,6 +43,9 @@ AI MODEL (optional: without a key, built-in rules run and nothing leaves your co
   --gemini-key-file F  same as --api-key-file; kept for existing setups
   --llm MODE           live (default), heuristic (rules only, nothing sent), record, replay
 
+OTHER
+  --version            print the version and exit
+
 TESTING AND LIMITS
   --dry-run            print the kubectl commands instead of running them
   --timeout DURATION   stop after this long (default 10m)
@@ -62,8 +65,8 @@ func noArguments() bool { return len(os.Args) == 1 }
 
 const noArgumentsNote = `Nothing to analyze yet. Tell me what to look at, for example:
 
-  analyzer --log-file app.log
-  analyzer --namespace shop --api-key-file ~/.keys/gemini
+  log-analyzer --log-file app.log
+  log-analyzer --namespace shop --api-key-file ~/.keys/gemini
 
 Run with --help to see everything.
 `

@@ -41,6 +41,7 @@ func main() {
 		enableGit    = flag.Bool("git", false, "Also commit the report into a Git repository. Off by default. Needs git on your PATH. Giving --git-repo turns it on")
 		gitRepo      = flag.String("git-repo", "", "Git repository for the commit (default with --git: ~/log-analyzer-incidents). Giving this flag turns --git on")
 		output       = flag.String("output", "", "Also save the report as a markdown file. A folder (existing, or ending in /) gets a new, named file; any other value is the file to write")
+		showVersion  = flag.Bool("version", false, "Print the version and exit")
 		createBranch = flag.Bool("branch", false, "Create a separate git branch for the incident (default false: commit to current branch)")
 	)
 	flag.StringVar(output, "o", "", "Short for --output")
@@ -50,6 +51,10 @@ func main() {
 		os.Exit(2)
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(versionString())
+		return
+	}
 	gitOn := gitRequested(flagsSet(), *enableGit, *gitRepo)
 
 	if *modelName == "" {

@@ -6,6 +6,7 @@ Thank you for helping. This is a security-sensitive tool, so a few rules matter.
 
 You need Go (the version in `go.mod`), `git` and `kubectl`. For the full check you also need Docker, k3d and Helm.
 Run every command inside the repository folder.
+The Go code must build and pass its tests on Linux, macOS and Windows (CI checks all three). The `Makefile` and `scripts/*.sh` run on Linux, macOS and WSL only, so use one of those to develop.
 
 - `make ci` runs the checks that need no cluster. Run it before every pull request.
 - `make helm-k3d` installs the Helm chart on a throwaway local cluster and runs an investigation. Run it when you change Go code or the chart.

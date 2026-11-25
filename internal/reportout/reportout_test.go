@@ -3,6 +3,7 @@ package reportout
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func TestSaveExactFileIsWrittenAndReplaced(t *testing.T) {
 	if b, _ := os.ReadFile(f); string(b) != "two" {
 		t.Fatalf("content = %q", b)
 	}
-	if fi, _ := os.Stat(f); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(f); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // Windows has no Unix permission bits
 		t.Fatalf("file mode = %v, want 0600", fi.Mode().Perm())
 	}
 }

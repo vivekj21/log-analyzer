@@ -1,8 +1,10 @@
 package creds
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,6 +77,9 @@ func TestBrokenFileDoesNotFallThroughToEnv(t *testing.T) {
 }
 
 func TestWorldReadableFileWarnsButWorks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits")
+	}
 	var warned []string
 	warn := func(s string) { warned = append(warned, s) }
 
@@ -96,5 +101,22 @@ func TestWorldReadableFileWarnsButWorks(t *testing.T) {
 	Resolve(FileProvider("flag", good, warn))
 	if len(warned) != 0 {
 		t.Errorf("0440 should not warn, got %v", warned)
+	}
+}
+
+func TestKeyFileTooOpen(t *testing.T) {
+	cases := []struct {
+		goos string
+		perm fs.FileMode
+		want bool
+	}{
+		{"linux", 0o644, true}, {"linux", 0o400, false}, {"linux", 0o440, false},
+		{"darwin", 0o604, true}, {"darwin", 0o600, false},
+		{"windows", 0o666, false}, {"windows", 0o444, false}, // never a warning on Windows
+	}
+	for _, c := range cases {
+		if got := keyFileTooOpen(c.goos, c.perm); got != c.want {
+			t.Errorf("keyFileTooOpen(%s, %04o) = %v, want %v", c.goos, c.perm, got, c.want)
+		}
 	}
 }

@@ -15,7 +15,9 @@ package creds
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -91,7 +93,7 @@ func (p fileProvider) Lookup() (string, bool, error) {
 	if info.Size() > maxKeyFileBytes {
 		return "", false, fmt.Errorf("%q is %d bytes; a key file should hold only the key", p.path, info.Size())
 	}
-	if p.warn != nil && info.Mode().Perm()&0o007 != 0 {
+	if p.warn != nil && keyFileTooOpen(runtime.GOOS, info.Mode().Perm()) {
 		p.warn(fmt.Sprintf("key file %q can be read by every user on this machine (mode %04o); use 0400 or 0440", p.path, info.Mode().Perm()))
 	}
 	raw, err := os.ReadFile(p.path)
@@ -107,4 +109,14 @@ func (p fileProvider) Lookup() (string, bool, error) {
 		return "", false, fmt.Errorf("key file %q has spaces or several lines; it should hold only the key", p.path)
 	}
 	return key, true, nil
+}
+
+// keyFileTooOpen says whether a key file can be read by every user on the machine.
+// Windows does not store Unix permission bits (Go reports a fixed 0666 or 0444 there), so the
+// check cannot be done from the mode and is skipped: a warning would be wrong on every run.
+func keyFileTooOpen(goos string, perm fs.FileMode) bool {
+	if goos == "windows" {
+		return false
+	}
+	return perm&0o007 != 0
 }

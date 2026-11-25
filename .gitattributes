@@ -1,0 +1,11 @@
+# Always check out with Unix line endings, on every system (Windows included).
+# Test data and scripts compare exact text, and a CRLF checkout would break them.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.gz binary
+*.zip binary
+
+# Real production logs are test data and some use Windows line endings on purpose.
+# Never convert them, on any system, so every checkout holds exactly the same bytes.
+testdata/** -text

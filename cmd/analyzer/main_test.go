@@ -15,7 +15,7 @@ import (
 // These tests build the real analyzer program and run it, so they check what a user sees:
 // what is printed, which files appear, the exit code, and what happens when git is missing.
 
-var binPath string
+var binPath, goTool string
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "analyzer-e2e")
@@ -27,11 +27,11 @@ func TestMain(m *testing.M) {
 	if runtime.GOOS == "windows" {
 		binPath += ".exe"
 	}
-	goBin, err := exec.LookPath("go")
+	goTool, err = exec.LookPath("go")
 	if err != nil {
-		goBin = filepath.Join(runtime.GOROOT(), "bin", "go")
+		goTool = filepath.Join(runtime.GOROOT(), "bin", "go")
 	}
-	if out, err := exec.Command(goBin, "build", "-o", binPath, ".").CombinedOutput(); err != nil {
+	if out, err := exec.Command(goTool, "build", "-o", binPath, ".").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot build the analyzer: %v\n%s", err, out)
 		os.Exit(1)
 	}
@@ -405,5 +405,65 @@ func TestHelpListsEveryFlag(t *testing.T) {
 	}
 	if !strings.Contains(help, "-o FILE") {
 		t.Error("short flag -o is not in --help")
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	e := newEnv(t)
+	// A plain build still prints a clear one-line version.
+	r := run(t, e.work, e.home, e.noGit, "--version")
+	want := runtime.GOOS + "/" + runtime.GOARCH
+	if r.code != 0 || !strings.HasPrefix(r.stdout, "log-analyzer ") || !strings.Contains(r.stdout, want) {
+		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+	if strings.Count(strings.TrimRight(r.stdout, "\n"), "\n") != 0 {
+		t.Fatalf("version must be one line: %q", r.stdout)
+	}
+	empty(t, e.work)
+	empty(t, e.home)
+
+	// A release build stamps the exact version, commit and date.
+	stamped := filepath.Join(t.TempDir(), "log-analyzer-stamped")
+	flags := "-X main.version=9.9.9 -X main.commit=0123456789abcdef -X main.date=2026-01-02T03:04:05Z"
+	if out, err := exec.Command(goTool, "build", "-ldflags", flags, "-o", stamped, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	cmd := exec.Command(stamped, "--version")
+	cmd.Env = []string{"PATH=" + e.noGit, "HOME=" + e.home}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLine := "log-analyzer 9.9.9 (" + runtime.Version() + " " + want + ", commit 0123456, committed 2026-01-02T03:04:05Z)\n"
+	if string(out) != wantLine {
+		t.Fatalf("got %q, want %q", out, wantLine)
+	}
+}
+
+// The program is made of several files (main.go, help.go, summary.go, ...). `go run cmd/analyzer/main.go`
+// compiles only that one file and fails. Every script, doc and workflow must use the package path
+// `./cmd/analyzer`. (This once broke the cluster end-to-end test.)
+func TestNothingRunsTheSingleMainFile(t *testing.T) {
+	root := filepath.Join("..", "..")
+	const bad = "cmd/analyzer/main.go"
+	var offenders []string
+	for _, dir := range []string{"scripts", "docs", ".github", "deploy"} {
+		filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if b, rerr := os.ReadFile(path); rerr == nil && strings.Contains(string(b), bad) {
+				offenders = append(offenders, path)
+			}
+			return nil
+		})
+	}
+	for _, f := range []string{"README.md", "CONTRIBUTING.md", "Makefile", "Dockerfile", ".goreleaser.yaml"} {
+		if b, err := os.ReadFile(filepath.Join(root, f)); err == nil && strings.Contains(string(b), bad) {
+			offenders = append(offenders, f)
+		}
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("these files use %q; use ./cmd/analyzer instead: %v", bad, offenders)
 	}
 }

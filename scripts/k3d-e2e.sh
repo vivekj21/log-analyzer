@@ -112,7 +112,7 @@ run() {
   local name=$1 svc=$2 symptom=$3 expect=$4 mode=${5:-heuristic} repo f
   repo=$(mktemp -d)
   echo; echo "=== scenario: $name (model mode: $mode)"
-  if go run ./cmd/analyzer/main.go --llm "$mode" --namespace la-demo --service "$svc" \
+  if go run ./cmd/analyzer --llm "$mode" --namespace la-demo --service "$svc" \
       --symptom "$symptom" --since 30m --git-repo "$repo" --timeout 4m >"$OUT/$name-$mode.log" 2>&1; then
     grep -E "Severity|Root Cause" "$OUT/$name-$mode.log" | head -3
     f=$(find "$repo" -name '*.md' | head -1)

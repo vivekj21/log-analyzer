@@ -32,3 +32,51 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+  # The same build and tests on the three systems people use. Windows and macOS only run Go,
+  # not the shell tooling (Makefile, scripts/*.sh), which stays Linux, macOS and WSL only.
+  portability:
+    name: build and test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+  # Builds the release files (all 5 systems) on every pull request, without publishing anything,
+  # so a broken release setup shows up here and not on release day.
+  release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.20.1
+          args: check
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.20.1
+          args: build --snapshot --clean
+      - name: The Linux program starts and reports its version
+        run: |
+          bin=$(find dist -type f -path '*linux_amd64*' -name log-analyzer | head -1)
+          test -n "$bin"
+          "$bin" --version
+          "$bin" --version | grep -q '^log-analyzer '

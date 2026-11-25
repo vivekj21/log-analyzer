@@ -17,7 +17,7 @@ for logfile in "$LOGS_DIR"/*.log; do
     echo ""
     echo "▶ Running scenario: $fname"
     echo "--------------------------------------------------------------------------------"
-    go run "$REPO_ROOT/cmd/analyzer/main.go" \
+    go run "$REPO_ROOT/cmd/analyzer" \
         --log-file="$logfile" \
         --git-repo="$TARGET_REPO" \
         --branch=false \

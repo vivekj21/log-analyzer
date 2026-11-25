@@ -42,7 +42,7 @@ eval-live: check-model
 > @if grep -q 'GEMINI_ERROR\|MODEL_ERROR\|"invalid_run": true' evals/results/live-$(MODEL)-attacks.json; then echo "INVALID: the run had errors, do not trust it"; exit 1; fi
 
 docker-build:
-> docker build -t $(IMAGE):$(VERSION) .
+> docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
 
 helm-lint:
 > @if command -v helm >/dev/null 2>&1; then \
