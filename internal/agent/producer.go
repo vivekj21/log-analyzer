@@ -217,7 +217,7 @@ func (p *ProducerAgent) dispatchFetches(investigationID string, requests []proto
 		return
 	}
 
-	requests = withNamespace(requests, inv.Namespace)
+	requests = withNamespace(requests, inv.Namespace, p.registry)
 	inv.SetPendingFetches(len(requests))
 	for _, req := range requests {
 		p.bus.FetcherCh <- protocol.NewMessage(protocol.MsgFetchRequest, investigationID, "producer", "fetcher", req)

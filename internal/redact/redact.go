@@ -24,13 +24,29 @@ var (
 	//      DB_SECRET='s3cr3t' api_key=AKIAIOSFODNN7EXAMPLE
 	//      token: "eyJhb..."
 	assignmentRe = regexp.MustCompile(
-		`(?im)((?:password|passwd|secret|token|api_key|api[-_]?secret|apikey|access[-_]?key|private[-_]?key)` +
-			`\s*[:=]\s*)` + // key + separator
+		`(?im)((?:password|passwd|passphrase|secret|token|api_key|api[-_]?secret|apikey|access[-_]?key|private[-_]?key)` +
+			`["']?\s*[:=]\s*)` + // key (it may be quoted, as in JSON) + separator
 			`("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)`) // quoted or unquoted value
+
+	// 1b. Name/value pairs, as printed for environment variables:
+	//      - name: DB_PASSWORD        {"name":"DB_PASSWORD","value":"abc123"}
+	//        value: abc123
+	//    The secret is on the line AFTER its name, so the pattern above cannot see it.
+	envPairRe = regexp.MustCompile(
+		`(?im)(["']?name["']?\s*:\s*["']?[A-Za-z0-9_.\-]*(?:password|passwd|passphrase|secret|token|api[-_]?key|apikey|access[-_]?key|private[-_]?key|credential)[A-Za-z0-9_.\-]*["']?\s*,?\s*(?:\r?\n\s*)?["']?value["']?\s*:\s*)` +
+			`("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,}]+)`)
+
+	// 1c. A password inside a URL: scheme://user:password@host
+	urlPasswordRe = regexp.MustCompile(`(\b[A-Za-z][A-Za-z0-9+.\-]*://[^\s/:@"']+:)[^\s/@"']+(@)`)
+
+	// 1d. Tokens with a well-known shape, even when no "token=" label is next to them.
+	//    GitHub, Google API, Stripe, Slack, OpenAI/Anthropic-style "sk-" keys, and JSON Web Tokens.
+	knownTokenRe = regexp.MustCompile(
+		`\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_\-]{30,}|[sr]k_(?:live|test)_[0-9A-Za-z]{16,}|xox[abprs]-[0-9A-Za-z\-]{10,}|sk-[A-Za-z0-9_\-]{20,}|eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,})`)
 
 	// 2. Authorization: Bearer ... (also Basic, Token, etc.)
 	authHeaderRe = regexp.MustCompile(
-		`(?im)(Authorization:\s*(?:Bearer|Basic|Token)\s+)\S+`)
+		`(?im)(Authorization:\s*(?:Bearer|Basic|Token)\s+)[^\s"']+`)
 
 	// 3. AWS‑style access key IDs (AKIA..., 20 chars) and secret keys (40 base64 chars).
 	awsAccessKeyRe = regexp.MustCompile(`\b(AKIA[0-9A-Z]{16})\b`)
@@ -62,6 +78,11 @@ func Redact(s string) string {
 
 	// 1. Assignment patterns.
 	out = assignmentRe.ReplaceAllString(out, "${1}"+placeholder)
+
+	// 1b-1d. Environment name/value pairs, passwords inside URLs, well-known token shapes.
+	out = envPairRe.ReplaceAllString(out, "${1}"+placeholder)
+	out = urlPasswordRe.ReplaceAllString(out, "${1}"+placeholder+"${2}")
+	out = knownTokenRe.ReplaceAllString(out, placeholder)
 
 	// 2. Authorization headers.
 	out = authHeaderRe.ReplaceAllString(out, "${1}"+placeholder)

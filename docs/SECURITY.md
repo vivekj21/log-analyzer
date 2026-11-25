@@ -35,7 +35,7 @@ commands in reports, trigger deletes, force a wrong answer ("NO_FAULT").
 ## Known residual risks
 - Delimiters are a strong hint, not a hard wall. A model can still be misled
   into a **wrong conclusion** even when it calls no forbidden tool.
-- Redaction is pattern-based. Unknown secret formats can slip through. Only email addresses are
+- Redaction is pattern-based. Secrets written inside sentences and unknown secret formats can slip through. Only email addresses are
   masked as personal data; names, phone numbers, IPs and IDs are not.
 - The prompt-injection tests have only been run against Gemini. The OpenAI-compatible and Anthropic clients send the same system prompt and untrusted-data rules, but other models have not been attack-tested yet.
 - In live mode, logs sent to the model service leave your environment, including any

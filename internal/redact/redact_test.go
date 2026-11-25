@@ -250,3 +250,60 @@ func TestCaseInsensitivity(t *testing.T) {
 		}
 	}
 }
+
+// Formats seen in real logs and in the YAML that kubectl prints. Each secret value must be gone.
+func TestCommonRealWorldFormats(t *testing.T) {
+	cases := []struct{ name, input string }{
+		{"JSON key", `{"level":"error","password":"` + canary + `"}`},
+		{"JSON key with spaces", `{ "api_key" : "` + canary + `" }`},
+		{"JSON token", `{"token":"` + canary + `","user":"a"}`},
+		{"YAML env pair", "- name: DB_PASSWORD\n  value: " + canary},
+		{"YAML env pair quoted", "- name: \"API_TOKEN\"\n  value: \"" + canary + "\""},
+		{"YAML env pair inside deployment", "        env:\n        - name: STRIPE_SECRET\n          value: " + canary + "\n        - name: LOG_LEVEL\n          value: debug"},
+		{"JSON env pair", `{"name":"DB_PASSWORD","value":"` + canary + `"}`},
+		{"URL password", "DATABASE_URL=postgres://app:" + canary + "@db:5432/x"},
+		{"URL password in text", "connect to postgres://app:" + canary + "@db:5432/x failed"},
+		{"redis URL", "redis://default:" + canary + "@cache:6379"},
+		{"GitHub token", "token ghp" + "_1234567890abcdefghijklmnopqrstuvwxyz12 used"},
+		{"GitHub fine-grained", "github" + "_pat_11ABCDEFG0abcdefghij_" + canary},
+		{"Google API key", "key AIza" + "SyA-1234567890abcdefghijklmnopqrstuvw in log"},
+		{"Stripe key", "sk" + "_live_51Habcdefghijklmnop1234567890"},
+		{"Slack token", "xox" + "b-1234567890-abcdefghijkl"},
+		{"sk- key", "sk" + "-proj-abcdefghijklmnopqrstuvwxyz0123456789"},
+		{"bare JWT", "ey" + "JhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abcdefghijklmnop seen"},
+		{"quoted bearer", `curl -H "Authorization: Bearer ` + canary + `"`},
+		{"passphrase", "passphrase=" + canary},
+	}
+	secrets := []string{canary, "ghp" + "_1234567890", "AIza" + "SyA-1234567890", "sk" + "_live_51H", "xox" + "b-1234567890", "sk" + "-proj-abcdefgh", "eyJzdWIi" + "OiIxMjMifQ"}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := Redact(tc.input)
+			for _, sec := range secrets {
+				if strings.Contains(out, sec) {
+					t.Errorf("secret %q survived:\ninput:  %s\noutput: %s", sec, tc.input, out)
+				}
+			}
+			if !strings.Contains(out, "[REDACTED]") {
+				t.Errorf("expected [REDACTED]:\ninput:  %s\noutput: %s", tc.input, out)
+			}
+		})
+	}
+}
+
+// Masking must not eat the text an investigation needs.
+func TestCommonFormatsKeepTheUsefulPart(t *testing.T) {
+	cases := []struct{ input, keep string }{
+		{`{"level":"error","msg":"db down","password":"x"}`, `"msg":"db down"`},
+		{"- name: DB_PASSWORD\n  value: x\n- name: LOG_LEVEL\n  value: debug", "LOG_LEVEL\n  value: debug"},
+		{"- name: LOG_LEVEL\n  value: debug", "value: debug"},
+		{"postgres://app:pw@db:5432/x failed: connection refused", "@db:5432/x failed: connection refused"},
+		{"dial tcp db:5432: connection refused", "dial tcp db:5432: connection refused"},
+		{"user:pass@db:5432 without a scheme is left alone", "user:pass@db:5432"},
+		{"Listener@493 started", "Listener@493"},
+	}
+	for _, tc := range cases {
+		if out := Redact(tc.input); !strings.Contains(out, tc.keep) {
+			t.Errorf("lost %q:\ninput:  %s\noutput: %s", tc.keep, tc.input, out)
+		}
+	}
+}

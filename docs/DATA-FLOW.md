@@ -19,12 +19,12 @@ The safe default is less accurate on purpose. You switch to live mode yourself, 
 
 ## What is masked first
 Before tool output or a log file is sent, stored or committed, these are replaced with `[REDACTED]`:
-passwords, tokens, API keys and similar `name=value` pairs, `Authorization` headers, AWS keys, private-key blocks, Kubernetes Secret values, and **email addresses**.
+passwords, tokens, API keys and similar `name=value` pairs (also in JSON, and as environment `name:`/`value:` pairs in YAML), passwords inside URLs (`scheme://user:password@host`), `Authorization` headers, AWS keys, GitHub, Google API, Stripe, Slack and `sk-` keys, JSON Web Tokens, private-key blocks, Kubernetes Secret values, and **email addresses**.
 
 ## What is NOT masked
 Masking is pattern-based, so it is a safety net, not a guarantee.
 - Anything you type in `--symptom` (do not put secrets there).
-- Names, phone numbers, IP addresses, customer or order IDs, and any secret in a format the patterns do not know.
+- Names, phone numbers, IP addresses, customer or order IDs, a secret written inside a sentence (for example "the password is ..."), and any secret in a format the patterns do not know.
 - Free text in your logs that does not look like a secret or an email.
 
 If your logs can contain personal data of that kind, use the rule-based mode or do not send them.
