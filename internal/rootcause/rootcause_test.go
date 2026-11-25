@@ -13,6 +13,9 @@ func TestCategory(t *testing.T) {
 		"the pod was CRASHLOOP_BAD_CONFIG as seen":  "CRASHLOOP_BAD_CONFIG",
 		"nothing recognisable here":                 "",
 		"ROOT_CAUSE_CATEGORY: CANNOT_DETERMINE":     "CANNOT_DETERMINE",
+		"ROOT_CAUSE_CATEGORY: Based on the logs":    "",
+		"ROOT_CAUSE_CATEGORY: OOM":                  "",
+		"ROOT_CAUSE_CATEGORY: BAD\nit was DB_LOCK":  "DB_LOCK",
 	}
 	for in, want := range cases {
 		if got := Category(in); got != want {

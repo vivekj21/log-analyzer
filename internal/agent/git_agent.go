@@ -429,45 +429,48 @@ func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequ
 	if title == "" {
 		title = fmt.Sprintf("Incident in %s", req.Namespace)
 	}
-	if severity == "" {
-		severity = "P1"
+	if !severityRe.MatchString(severity) {
+		// Severity goes into a file name, so only P0..P3 is accepted; anything else becomes P2.
+		severity = "P2"
 	}
 
-	// 3. Format markdown incident content
+	// 3. Choose the branch first: if it cannot be used, nothing is written.
 	now := time.Now().UTC()
 	incidentID := req.InvestigationID
 	if incidentID == "" {
 		incidentID = protocol.GenerateID()
 	}
-
 	dateStr := now.Format("2006-01-02")
-	slug := sanitizeSlug(title)
-	fileName := fmt.Sprintf("%s-%s-%s.md", dateStr, severity, slug)
-	if len(fileName) > 80 {
-		fileName = fileName[:80] + ".md"
-	}
 
-	incidentsDir := filepath.Join(absRepoDir, g.config.IncidentsDir)
-	if err := os.MkdirAll(incidentsDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create incidents directory %s: %w", incidentsDir, err)
-	}
-
-	filePath := filepath.Join(incidentsDir, fileName)
-	content := buildMarkdownReport(incidentID, title, severity, now, req, rootCause, signatures)
-
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write incident file %s: %w", filePath, err)
-	}
-
-	// 4. Optionally switch to or create an incident branch
 	branchName := req.BranchName
 	if branchName == "" && req.CreateBranch {
 		branchName = fmt.Sprintf("%s%s-%s", g.config.BranchPrefix, dateStr, incidentID)
 	}
-
 	currentBranch, _ := getGitCurrentBranch(absRepoDir)
 	if branchName != "" {
-		_, _ = execGit(absRepoDir, "checkout", "-b", branchName)
+		if _, err := execGit(absRepoDir, "checkout", "-b", branchName); err != nil {
+			// The branch may already exist: switch to it. If that fails too, stop. A report must
+			// never land on a different branch than the one that was asked for.
+			if _, err2 := execGit(absRepoDir, "checkout", branchName); err2 != nil {
+				return nil, fmt.Errorf("cannot use branch %q: %w", branchName, err)
+			}
+		}
+	}
+
+	// 4. Write the report. An existing file is never overwritten: a second incident with the
+	// same date, severity and title gets -2, -3 ... at the end of its name.
+	incidentsDir := filepath.Join(absRepoDir, g.config.IncidentsDir)
+	if err := os.MkdirAll(incidentsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create incidents directory %s: %w", incidentsDir, err)
+	}
+	baseName := fmt.Sprintf("%s-%s-%s", dateStr, severity, sanitizeSlug(title))
+	filePath, err := freeIncidentPath(incidentsDir, baseName)
+	if err != nil {
+		return nil, err
+	}
+	content := buildMarkdownReport(incidentID, title, severity, now, req, rootCause, signatures)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write incident file %s: %w", filePath, err)
 	}
 
 	// 5. Stage the incident file
@@ -476,18 +479,18 @@ func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequ
 		relPath = filePath
 	}
 
-	if _, err := execGit(absRepoDir, "add", relPath); err != nil {
+	if _, err := execGit(absRepoDir, "add", "--", relPath); err != nil {
 		return nil, fmt.Errorf("git add failed: %w", err)
 	}
 
-	// 6. Commit the incident with structured message
+	// 6. Commit ONLY the incident file. Anything else already staged in this repository stays staged.
 	commitMsg := fmt.Sprintf("incident(%s): %s\n\nInvestigation ID: %s\nSeverity: %s\nRoot Cause: %s\nAuto-committed by Autonomous Log Analyzer Agent",
 		severity, title, incidentID, severity, rootCause)
 
 	commitArgs := []string{
 		"-c", fmt.Sprintf("user.name=%s", g.config.CommitAuthor),
 		"-c", fmt.Sprintf("user.email=%s", g.config.CommitEmail),
-		"commit", "-m", commitMsg,
+		"commit", "-m", commitMsg, "--", relPath,
 	}
 
 	if _, err := execGit(absRepoDir, commitArgs...); err != nil {
@@ -586,6 +589,23 @@ func buildMarkdownReport(
 	}
 
 	return sb.String()
+}
+
+var severityRe = regexp.MustCompile(`^P[0-3]$`)
+
+// freeIncidentPath returns <dir>/<base>.md, or <base>-2.md, <base>-3.md ... if that name is taken.
+func freeIncidentPath(dir, base string) (string, error) {
+	for n := 1; n <= 999; n++ {
+		name := base + ".md"
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d.md", base, n)
+		}
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("too many incident files named %s in %s", base, dir)
 }
 
 func sanitizeSlug(s string) string {

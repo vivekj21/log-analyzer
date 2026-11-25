@@ -84,17 +84,18 @@ func (e *SandboxedExecutor) Execute(ctx context.Context, toolName string, params
 	defer cancel()
 
 	cmd := exec.CommandContext(execCtx, binary, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := &capWriter{max: MaxOutputBytes}
+	stderr := &capWriter{max: MaxOutputBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	cmd.Stdin = nil
 	cmd.Env = childEnv(os.Environ())
 
 	err = cmd.Run()
 
 	result := &ExecutionResult{
-		Stdout:   truncateOutput(stdout.String(), MaxOutputBytes),
-		Stderr:   truncateOutput(stderr.String(), MaxOutputBytes),
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
 		Duration: time.Since(start),
 	}
 
@@ -114,11 +115,33 @@ func (e *SandboxedExecutor) Execute(ctx context.Context, toolName string, params
 	return result, nil
 }
 
-func truncateOutput(s string, maxSize int) string {
-	if len(s) > maxSize {
-		return s[:maxSize] + "\n... [output truncated at 1 MiB]"
+// capWriter keeps at most max bytes and drops the rest, so a command that prints gigabytes
+// cannot fill this program's memory. It always reports the full write as done, so the command is not blocked.
+type capWriter struct {
+	buf       bytes.Buffer
+	max       int
+	truncated bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.buf.Len(); room > 0 {
+		if len(p) <= room {
+			w.buf.Write(p)
+		} else {
+			w.buf.Write(p[:room])
+			w.truncated = true
+		}
+	} else if len(p) > 0 {
+		w.truncated = true
 	}
-	return s
+	return len(p), nil
+}
+
+func (w *capWriter) String() string {
+	if w.truncated {
+		return w.buf.String() + "\n... [output truncated at 1 MiB]"
+	}
+	return w.buf.String()
 }
 
 // childEnv is the environment kubectl gets: ours, minus our own model-service variables (GEMINI_*, LLM_*, OPENAI_*, ANTHROPIC_*: the API key

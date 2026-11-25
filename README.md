@@ -70,7 +70,7 @@ sequenceDiagram
 - **It chooses its own next step.** The AI picks which of 10 read-only tools to call, reads what comes back, and asks for more until it can name the cause (multi-turn function calling).
 - **Four agents, one loop.** Producer, Fetcher, Analyzer and GitOps Scribe pass typed messages, and a state machine keeps the investigation in order.
 - **Autonomy with a leash.** Caps on tool calls (12), follow-up rounds (10), tokens and model calls, plus a circuit breaker after repeated failures.
-- **Guardrails in code, not hopes.** Every request passes a policy check before it runs: right namespace only, no secrets ConfigMap by default, no repeated calls.
+- **Guardrails in code, not hopes.** Every request passes a policy check before it runs: right namespace only, no ConfigMap reading by default, no repeated calls.
 - **Tested like software.** 8 prompt-injection attack cases, all defended; a fake "obedient" AI that proves the code blocks forbidden requests; offline replay in CI.
 - **A human decides.** Fixes are written as text suggestions. The approver denies every action by default.
 
@@ -111,7 +111,7 @@ kubectl logs -f job/inv1
 
 In live mode the chart mounts your Secret as a read-only file, not as an environment variable. The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
 
-The chart grants read-only access, and not the secrets ConfigMap by default.
+The chart grants read-only access, and no ConfigMap access by default.
 
 **Try it free on a throwaway local cluster** (needs Docker and k3d; no API key, it uses the built-in rule-based model via `--llm heuristic`):
 
@@ -144,7 +144,7 @@ If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("ca
 
 A file named `YYYY-MM-DD-<severity>-<slug>.md` with the severity, root cause, evidence and recommendations, committed as `incident(P1): <title>`. Add `--branch` to commit on a separate branch.
 
-The AI sorts causes into six groups: out of memory, crash loop from bad settings, image pull failure, failing health check, database lock, or no fault. If it cannot tell, it says so (`CANNOT_DETERMINE`) instead of guessing. Log-file mode recognizes patterns such as out-of-memory, panics, crash loops, 5xx cascades, database locks, full disks, expired certificates and login attacks.
+The AI puts each cause into one category from a fixed list (the list is in `internal/llm/model.go`), for example out of memory, bad settings, image pull failure, failing health check, database lock or no fault. If it cannot tell, it says so (`CANNOT_DETERMINE`) instead of guessing. If the model forgets to name a category, it is asked once; if it still gives none, the report says `CANNOT_DETERMINE`.
 
 ## Safety layers
 
@@ -153,7 +153,7 @@ The AI sorts causes into six groups: out of memory, crash loop from bad settings
 | Untrusted-data delimiters | The AI is told log text is data, never orders |
 | Fixed tools | 10 read-only tools; a test fails if a write tool is added |
 | Parameter checks | Patterns, length limits, no shell metacharacters |
-| Policy | Right namespace, no secrets ConfigMap by default, at most 12 tool calls, no repeats |
+| Policy | Right namespace, ConfigMaps not readable by default, at most 12 tool calls, no repeats |
 | Redaction | Secrets are masked before anything is saved |
 | Cost limits | Token and call limits, and a circuit breaker |
 | No write path | An approver that denies everything is the default |

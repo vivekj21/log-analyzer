@@ -62,7 +62,11 @@ func (a *AnalyzerAgent) handleMessage(ctx context.Context, msg protocol.Message)
 		return
 	}
 
-	payload := msg.Payload.(protocol.AnalyzeRequestPayload)
+	payload, ok := msg.Payload.(protocol.AnalyzeRequestPayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 
 	token, err := a.tokenFor(msg.InvestigationID)
 	if err != nil {

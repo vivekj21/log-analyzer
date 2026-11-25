@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
 	"k8s-log-analyzer/internal/toolbox"
 )
@@ -80,7 +81,11 @@ func (p *ProducerAgent) handleMessage(ctx context.Context, msg protocol.Message)
 }
 
 func (p *ProducerAgent) startInvestigation(ctx context.Context, msg protocol.Message) {
-	payload := msg.Payload.(protocol.InvestigatePayload)
+	payload, ok := msg.Payload.(protocol.InvestigatePayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 	inv := protocol.NewInvestigation(msg.InvestigationID, payload.Symptom, payload.Namespace, payload.Service, payload.Since)
 
 	p.mu.Lock()
@@ -110,7 +115,11 @@ func (p *ProducerAgent) startInvestigation(ctx context.Context, msg protocol.Mes
 }
 
 func (p *ProducerAgent) handleFetchResponse(ctx context.Context, msg protocol.Message) {
-	payload := msg.Payload.(protocol.FetchResponsePayload)
+	payload, ok := msg.Payload.(protocol.FetchResponsePayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 
 	p.mu.Lock()
 	inv := p.investigations[msg.InvestigationID]
@@ -154,7 +163,11 @@ func (p *ProducerAgent) handleFetchResponse(ctx context.Context, msg protocol.Me
 }
 
 func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.Message) {
-	payload := msg.Payload.(protocol.AnalyzeResponsePayload)
+	payload, ok := msg.Payload.(protocol.AnalyzeResponsePayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 
 	p.mu.Lock()
 	inv := p.investigations[msg.InvestigationID]
@@ -196,7 +209,11 @@ func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.
 }
 
 func (p *ProducerAgent) handleError(ctx context.Context, msg protocol.Message) {
-	payload := msg.Payload.(protocol.ErrorPayload)
+	payload, ok := msg.Payload.(protocol.ErrorPayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 	p.mu.Lock()
 	inv := p.investigations[msg.InvestigationID]
 	p.mu.Unlock()
@@ -233,10 +250,12 @@ func (p *ProducerAgent) forceComplete(inv *protocol.Investigation, reason string
 			sb.WriteString(fmt.Sprintf("Round %d Analysis:\n%s\n\n", i+1, a.RawAnalysis))
 		}
 	}
+	sb.WriteString("ROOT_CAUSE_CATEGORY: " + llm.CategoryCannotDetermine + "\n")
 	inv.FinalReport = sb.String()
 
 	if p.enableGit {
-		p.persistToGit(inv, "Partial Investigation", "", inv.FinalReport)
+		// The investigation did not finish, so the category is CANNOT_DETERMINE, never blank.
+		p.persistToGit(inv, "Partial Investigation", "ROOT_CAUSE_CATEGORY: "+llm.CategoryCannotDetermine, inv.FinalReport)
 		return
 	}
 
@@ -253,7 +272,11 @@ func (p *ProducerAgent) persistToGit(inv *protocol.Investigation, rootCause, raw
 }
 
 func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protocol.Message) {
-	payload := msg.Payload.(protocol.GitPersistResponsePayload)
+	payload, ok := msg.Payload.(protocol.GitPersistResponsePayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 
 	p.mu.Lock()
 	inv := p.investigations[msg.InvestigationID]

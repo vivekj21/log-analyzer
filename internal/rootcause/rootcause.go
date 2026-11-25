@@ -10,15 +10,16 @@ import (
 )
 
 var (
-	categoryRe = regexp.MustCompile(`(?i)ROOT_CAUSE_CATEGORY[:\s*]*([A-Z_]+)`)
-	summaryRe  = regexp.MustCompile(`(?im)^[\s*#>_-]*root cause[\s*_]*:[\s*_]*(.+)$`)
-	known      = llm.AllCategories
+	summaryRe = regexp.MustCompile(`(?im)^[\s*#>_-]*root cause[\s*_]*:[\s*_]*(.+)$`)
+	known     = llm.AllCategories
 )
 
 // Category returns the root-cause category in text, or "" if none is found.
+// The ROOT_CAUSE_CATEGORY line wins (only when it names a known category); otherwise the
+// first known category name found anywhere in the text is used.
 func Category(text string) string {
-	if m := categoryRe.FindStringSubmatch(text); len(m) > 1 {
-		return strings.ToUpper(strings.TrimSpace(m[1]))
+	if c, ok := llm.ValidCategoryLine(text); ok {
+		return c
 	}
 	for _, c := range known {
 		if strings.Contains(text, c) {

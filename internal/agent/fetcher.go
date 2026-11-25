@@ -53,7 +53,11 @@ func (f *FetcherAgent) handleMessage(ctx context.Context, msg protocol.Message) 
 		return
 	}
 
-	payload := msg.Payload.(protocol.FetchRequestPayload)
+	payload, ok := msg.Payload.(protocol.FetchRequestPayload)
+	if !ok {
+		log.Printf("[Agent] Ignoring a message with the wrong payload type (%T) for investigation %s", msg.Payload, msg.InvestigationID)
+		return
+	}
 
 	// --- Policy check (before any execution) ---
 	scope, _ := f.investigations.Get(msg.InvestigationID)
