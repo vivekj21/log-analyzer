@@ -1,8 +1,10 @@
 # Accuracy
 
-Run on 2026-11-25 at commit `bafa7c6`. Each case is a small broken app on a throwaway k3d cluster with a known cause.
+Run on 2026-11-25 at commit `a7b1e2c`. Each case is a small broken app on a throwaway k3d cluster with a known cause.
 A run is right (✅) only if the answer's category equals the known cause. `CANNOT_DETERMINE` (❔ unsure) means the model said it could not tell: not right, but not a wrong diagnosis. Any other category is wrong (❌). `ERROR`/`NONE` (⛔) mean the run failed.
 Each case was run 3 times per model. A cell shows how the runs split, then what each run answered.
+Answers reused from earlier runs of the same code (not asked again): gemini 90.
+
 | App | Set | Known cause | Rule-based model | gemini (`gemini`) |
 |---|---|---|---|---|
 | config-parse | dev | CRASHLOOP_BAD_CONFIG | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG |
@@ -11,14 +13,14 @@ Each case was run 3 times per model. A cell shows how the runs split, then what 
 | dependency-chain (simulated) | heldout | DEPENDENCY_DOWN | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: DEPENDENCY_DOWN, DEPENDENCY_DOWN, DEPENDENCY_DOWN |
 | dns-cross-namespace | heldout | DNS_FAIL | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: DNS_FAIL, DNS_FAIL, DNS_FAIL |
 | dns-wrong-name | dev | DNS_FAIL | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: DNS_FAIL, DNS_FAIL, DNS_FAIL |
-| flaky-oom | heldout | OOM_KILLED | ❔ 2 right, 1 unsure: OOM_KILLED, OOM_KILLED, CANNOT_DETERMINE | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
+| flaky-oom | heldout | OOM_KILLED | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
 | healthy | dev | NO_FAULT | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: NO_FAULT, NO_FAULT, NO_FAULT |
 | image | dev | IMAGE_PULL_FAIL | ✅ 3 right: IMAGE_PULL_FAIL, IMAGE_PULL_FAIL, IMAGE_PULL_FAIL | ✅ 3 right: IMAGE_PULL_FAIL, IMAGE_PULL_FAIL, IMAGE_PULL_FAIL |
 | liveness-too-strict | dev | LIVENESS_PROBE_KILL | ❌ 3 wrong: READINESS_PROBE_FAIL, READINESS_PROBE_FAIL, READINESS_PROBE_FAIL | ✅ 3 right: LIVENESS_PROBE_KILL, LIVENESS_PROBE_KILL, LIVENESS_PROBE_KILL |
 | long-noisy-log | heldout | CRASHLOOP_BAD_CONFIG | ✅ 3 right: CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG | ✅ 3 right: CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG, CRASHLOOP_BAD_CONFIG |
-| misleading-log | dev | OOM_KILLED | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
+| misleading-log | dev | OOM_KILLED | ❌ 3 wrong: DB_LOCK, DB_LOCK, DB_LOCK | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
 | missing-configmap | dev | MISSING_CONFIG_OBJECT | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: MISSING_CONFIG_OBJECT, MISSING_CONFIG_OBJECT, MISSING_CONFIG_OBJECT |
-| oom | dev | OOM_KILLED | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
+| oom | dev | OOM_KILLED | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
 | postgres-bad-password | heldout | CRASHLOOP_BAD_CONFIG | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ❌ 2 right, 1 wrong: CRASHLOOP_BAD_CONFIG, DEPENDENCY_DOWN, CRASHLOOP_BAD_CONFIG |
 | postgres-real-lock | dev | DB_LOCK | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: DB_LOCK, DB_LOCK, DB_LOCK |
 | pvc-bad-storageclass | dev | STORAGE_FAIL | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: STORAGE_FAIL, STORAGE_FAIL, STORAGE_FAIL |
@@ -36,13 +38,13 @@ Each case was run 3 times per model. A cell shows how the runs split, then what 
 | two-faults | dev | OOM_KILLED | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: OOM_KILLED, OOM_KILLED, OOM_KILLED |
 | unschedulable-cpu | dev | UNSCHEDULABLE | ❔ 3 unsure: CANNOT_DETERMINE, CANNOT_DETERMINE, CANNOT_DETERMINE | ✅ 3 right: UNSCHEDULABLE, UNSCHEDULABLE, UNSCHEDULABLE |
 
-**Rule-based: dev 21 of 60 runs right (36 unsure, 3 wrong); held-out 8 of 30 runs right (22 unsure).** **gemini: dev 60 of 60 runs right; held-out 26 of 30 runs right (4 wrong).**
+**Rule-based: dev 15 of 60 runs right (39 unsure, 6 wrong); held-out 6 of 30 runs right (24 unsure).** **gemini: dev 60 of 60 runs right; held-out 26 of 30 runs right (4 wrong).**
 
 The **dev** set is what the prompt and the code were tuned against. The **held-out** set was never used for tuning, so its numbers are the more honest ones.
 
 ## Explanations
 A right category is not enough: for every right answer the report is also checked for the terms the case requires (`# must-mention`) and for false claims (`# must-not-claim`).
-**Rule-based: 29 of 29 right answers also passed the checklist.** **gemini: 85 of 86 right answers also passed the checklist.**
+**Rule-based: 21 of 21 right answers also passed the checklist.** **gemini: 85 of 86 right answers also passed the checklist.**
 - gemini, dependency-chain, run 2: missing: redis
 
 ## What this does not show
