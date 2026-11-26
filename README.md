@@ -98,8 +98,6 @@ Your computer may warn about a program from an unknown publisher, because these 
 
 **Option B: run it from source.** You need Go 1.21 or newer (it downloads the exact Go version this project needs by itself). Use `go run ./cmd/analyzer` wherever the examples below say `log-analyzer`.
 
-> **Status:** the first release is being prepared. Until it is on the Releases page, use option B.
-
 **Other things you may need later:** `kubectl`, logged in to the cluster, for a live cluster (step 4). An API key for a real AI model (step 3). `git`, only if you want reports committed to Git (step 2).
 
 ### 1. Try it in one minute
