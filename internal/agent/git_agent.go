@@ -514,7 +514,7 @@ func (g *GitAgent) PersistIssue(ctx context.Context, req protocol.GitPersistRequ
 	}
 
 	return &PersistResult{
-		FilePath:   relPath,
+		FilePath:   filepath.ToSlash(relPath), // shown to the user: same text on every system (Git uses /)
 		CommitHash: strings.TrimSpace(commitHash),
 		Branch:     activeBranch,
 	}, nil
