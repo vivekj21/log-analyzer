@@ -276,7 +276,7 @@ Go, any of: Gemini, an OpenAI-compatible service (OpenAI, Groq, OpenRouter, Mist
 
 All settings: [docs/CONFIG.md](docs/CONFIG.md), or run `log-analyzer --help`. Output options (`--output`, `--git`, `--git-repo`, `--branch`) are in Quick start step 2.
 
-**Where to read next:** [docs/CONFIG.md](docs/CONFIG.md) (every setting) → [docs/DATA-FLOW.md](docs/DATA-FLOW.md) (what leaves your computer, and what is stored) → [docs/SECURITY.md](docs/SECURITY.md) (how it is kept safe) → [docs/ROADMAP.md](docs/ROADMAP.md) (what is planned).
+**Where to read next:** [docs/CONFIG.md](docs/CONFIG.md) (every setting) → [docs/DATA-FLOW.md](docs/DATA-FLOW.md) (what leaves your computer, and what is stored) → [docs/SECURITY.md](docs/SECURITY.md) (how it is kept safe) → [docs/ROADMAP.md](docs/ROADMAP.md) (what is planned) → [docs/guide/](docs/guide/README.md) (how it works and why, chapter by chapter).
 
 ## Develop
 
@@ -302,7 +302,7 @@ internal/protocol messages between agents
 internal/ttlmap   map whose idle entries expire
 evals/            attack cases and results
 deploy/helm       Helm chart
-docs/             SECURITY.md, CONFIG.md, ROADMAP.md
+docs/             SECURITY.md, CONFIG.md, DATA-FLOW.md, LIMITS.md, ROADMAP.md, guide/
 testdata/         sample logs
 incidents/        reports written by early runs
 ```
@@ -311,16 +311,14 @@ incidents/        reports written by early runs
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). To report a security problem, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Limits and roadmap
+## Good to know
 
-- Early stage: tested on 8 hand-written attack cases, one model, one run. The model resisted them even without the code guards, so the guards are insurance, proven by deterministic tests.
-- The AI can be wrong. A human should review every report before acting.
-- Masking is pattern-based (secrets and email addresses). Unknown secret formats and other personal data can slip through.
-- In live mode, logs are sent to the model service you chose and leave your environment (unless it runs on your machine). Free tiers of some services may be read or used for training; see [docs/DATA-FLOW.md](docs/DATA-FLOW.md) before using real data.
-- Data in the same namespace stays readable. Run with a read-only Kubernetes account.
-- It suggests fixes and never applies them.
-- Reports are stored outside the repo and are not backed up unless you push that folder.
-- Model names expire. Keep `--model` current; free tiers have low limits.
-- The prompt-injection tests (8 attacks) have only been run on Gemini. Other models have not been tested against them yet.
-- The Helm chart and Docker image passed tests on a local k3d cluster, with the rule-based model and with live Gemini. They have not run on a real production cluster.
-- Not enterprise-ready yet: see [docs/ROADMAP.md](docs/ROADMAP.md).
+Log Analyzer is an early release. It investigates a cluster or reads a log file and writes a report, and its [scorecard](accuracy/RESULTS.md) shows where it is right and where it is not. A few habits keep you safe:
+
+- **Review every report before acting.** The AI can be wrong. It suggests fixes and never applies them.
+- **Run it with a read-only Kubernetes account.** The Helm chart sets this up for you.
+- **Choose the mode for your data.** Masking covers secrets and email addresses, not everything. If your logs hold personal data, use the rule-based mode or a model server you run yourself. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
+
+**Where it is young.** It has been tested on local k3d clusters, not yet on a production cluster, and the prompt-injection tests have so far run on Gemini only. Audit trail, approvals and access control are on the [roadmap](docs/ROADMAP.md). **Early testers are welcome:** try it on a test cluster and open an issue with what you find.
+
+The full list is in [docs/LIMITS.md](docs/LIMITS.md).
