@@ -213,6 +213,9 @@ func TestRealProductionLogs(t *testing.T) {
 			path := filepath.Join(prodDir, tc.fileName)
 			data, err := os.ReadFile(path)
 			if err != nil {
+				if os.IsNotExist(err) && strings.HasPrefix(tc.fileName, "real-") && os.Getenv("LOG_ANALYZER_REQUIRE_SAMPLES") != "1" {
+					t.Skipf("%s is a third-party Loghub sample and is not in the repo: run scripts/fetch-loghub-samples.sh", tc.fileName)
+				}
 				t.Fatalf("failed to read production log %s: %v", path, err)
 			}
 

@@ -22,3 +22,6 @@ dist/
 .vscode/
 *.swp
 *.swo
+
+# Third-party test data, downloaded by scripts/fetch-loghub-samples.sh (see testdata/README.md)
+testdata/production_logs/real-*.log

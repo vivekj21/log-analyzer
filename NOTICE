@@ -2,3 +2,7 @@ Log Analyzer
 Copyright 2026 Vivek Joshi
 
 This product includes software developed by Vivek Joshi.
+
+Test data: the sample logs that scripts/fetch-loghub-samples.sh downloads come from Loghub
+(https://github.com/logpai/loghub, Zhu et al., ISSRE 2023). They are not part of this product, are not
+stored in this repository and are not covered by the Apache License. See testdata/production_logs/LOGHUB-NOTICE.txt.

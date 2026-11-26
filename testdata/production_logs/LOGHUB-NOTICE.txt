@@ -1,0 +1,23 @@
+Third-party data notice: Loghub
+
+The files named real-*.log in this folder are not part of Log Analyzer and are not covered by its Apache-2.0
+licence. They are the first 2,000 lines of six sample logs from Loghub (HDFS, Linux, OpenSSH, OpenStack,
+Spark, ZooKeeper), converted to Windows line endings. They are not stored in this repository: run
+scripts/fetch-loghub-samples.sh (or `make test`) to download them.
+
+Loghub: https://github.com/logpai/loghub
+
+Loghub's licence notice, as published with the datasets (https://zenodo.org/records/8196385):
+
+  The datasets are freely available for research or academic work, subject to the following condition:
+  For any usage or distribution of the loghub datasets, please refer to the loghub repository URL
+  (https://github.com/logpai/loghub) and cite the loghub paper (Loghub: A Large Collection of System Log
+  Datasets for AI-driven Log Analytics) where applicable.
+  The above license notice shall be included in all copies of the datasets.
+
+Paper to cite:
+  Jieming Zhu, Shilin He, Pinjia He, Jinyang Liu, Michael R. Lyu. Loghub: A Large Collection of System Log
+  Datasets for AI-driven Log Analytics. IEEE International Symposium on Software Reliability Engineering
+  (ISSRE), 2023.
+
+Use these files only as the Loghub notice allows. If your use is not research or academic work, do not fetch them.

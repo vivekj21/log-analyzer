@@ -4,7 +4,7 @@ EVAL_OUT ?= /tmp/log-analyzer-eval-offline.json
 IMAGE ?= log-analyzer
 VERSION ?= 0.1.0
 
-.PHONY: check-cases validate-cases check-providers check-accuracy-run check-accuracy-report check-commit-results commit-results check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
+.PHONY: fetch-samples check-cases validate-cases check-providers check-accuracy-run check-accuracy-report check-commit-results commit-results check-redaction accuracy helm-k3d-live ci fmt-check vet build test race eval-offline check-model eval-live docker-build helm-lint helm-k3d hooks
 
 # Everything GitHub runs. Needs no API key and makes no paid calls.
 ci: eval-offline fmt-check vet build test race check-redaction check-providers check-cases check-accuracy-run check-accuracy-report check-commit-results helm-lint check-helm-rbac
@@ -18,11 +18,15 @@ vet:
 build:
 > go build ./...
 
-test:
-> go test ./...
+# Third-party sample logs (Loghub) are downloaded, not stored in the repository. See testdata/README.md.
+fetch-samples:
+> scripts/fetch-loghub-samples.sh
 
-race:
-> go test -race ./...
+test: fetch-samples
+> LOG_ANALYZER_REQUIRE_SAMPLES=1 go test ./...
+
+race: fetch-samples
+> LOG_ANALYZER_REQUIRE_SAMPLES=1 go test -race ./...
 
 # Replays recorded model answers through the real fetcher, policy and redaction. Free.
 eval-offline:
