@@ -96,7 +96,7 @@ Your computer may warn about a program from an unknown publisher, because these 
 - Windows: choose "More info", then "Run anyway".
 - Mac: if it says the developer cannot be verified, run `xattr -d com.apple.quarantine ./log-analyzer` once.
 
-**Option B: run it from source.** You need Go 1.21 or newer (it downloads the exact Go version this project needs by itself). Use `go run ./cmd/analyzer` wherever the examples below say `log-analyzer`.
+**Option B: run it from source.** You need Go 1.21 or newer. The exact Go version the project builds with is written in `go.mod`. If your Go is older, Go downloads that version by itself the first time you run it (this needs internet, and it does not work when `GOTOOLCHAIN=local` is set: then install the version from `go.mod`). Use `go run ./cmd/analyzer` wherever the examples below say `log-analyzer`.
 
 **Other things you may need later:** `kubectl`, logged in to the cluster, for a live cluster (step 4). An API key for a real AI model (step 3). `git`, only if you want reports committed to Git (step 2).
 
