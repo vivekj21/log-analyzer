@@ -76,6 +76,7 @@ Models write prose. The program needs a category. The solution is simple and wor
 - `llm.ValidCategoryLine` accepts it only if the name is exactly one of the 16 (prose like "OOMKilled" does not count).
 - **`CategoryGuard`** (`internal/llm/categoryguard.go`) wraps the live models. If a final answer has no valid line, it asks once, in the same conversation: "reply with exactly one line, choose from the evidence you already read, or answer `CANNOT_DETERMINE`". If that fails too, the report says `CANNOT_DETERMINE` and why. A missing category is never left blank and never guessed.
 - `rootcause.Category` reads the result, and `rootcause.Summary` pulls out the "Root Cause:" line (capped at 300 characters).
+- **The report is built from the answer, and checked** (`internal/report`). The prompt asks the model to quote each evidence line between backticks. The report looks for every quoted line in the tool output that was really collected. Lines that are not there are marked ✘ and lower the confidence one level. If a fault answer has quoted lines and none of them is found, the report says `CANNOT_DETERMINE` and keeps the model's original claim for audit. The same data is available as JSON (`Report.JSON`), which the future REST API will return.
 
 ## 6. Honesty and saying "I cannot tell"
 

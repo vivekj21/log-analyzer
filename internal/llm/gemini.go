@@ -70,13 +70,19 @@ ROOT_CAUSE_CATEGORY: [One of: OOM_KILLED, CRASHLOOP_BAD_CONFIG, IMAGE_PULL_FAIL,
 **Confidence:** [HIGH / MEDIUM / LOW]
 
 **Evidence:**
-- [Specific log line, event, or metric that supports the conclusion]
-- [Additional evidence...]
+- <tool_name>: ` + "`<exact line copied from that tool's output>`" + `
+- <tool_name>: ` + "`<another exact line>`" + `
+Quote 2 to 4 lines. Copy each line exactly, between backticks. Never shorten, reword or invent text between backticks, and never quote a line you did not read. A reader will check every quoted line against the tool output.
+
+**Ruled out:**
+- <CATEGORY>: <one short reason the data does not support it>
+List the 2 or 3 closest alternatives you considered. Leave this section out if there were none.
 
 **Recommendations:**
 1. [Immediate action to resolve the issue]
 2. [Preventive measure for the future]
-3. [Additional recommendations...]
+
+**Next command:** ` + "`<one read-only kubectl command a person can run to confirm or fix this>`" + `
 
 Do NOT provide a conclusion until you have gathered sufficient evidence. Use the tools to investigate thoroughly first.
 Always ensure the last or prominent line of your final conclusion includes:

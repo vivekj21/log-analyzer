@@ -263,7 +263,7 @@ func TestClusterModeDefaultPrintsAndSavesNothing(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d\n%s", r.code, r.stderr)
 	}
-	if !strings.Contains(r.stdout, "ROOT CAUSE ANALYSIS REPORT") {
+	if !strings.Contains(r.stdout, "Incident report:") {
 		t.Fatalf("report missing on screen:\n%s", r.stdout)
 	}
 	empty(t, e.work)
@@ -278,10 +278,10 @@ func TestClusterModeOutputFile(t *testing.T) {
 		t.Fatalf("exit %d\n%s", r.code, r.stderr)
 	}
 	got, err := os.ReadFile(target)
-	if err != nil || !strings.Contains(string(got), "ROOT CAUSE ANALYSIS REPORT") {
+	if err != nil || !strings.Contains(string(got), "Incident report:") {
 		t.Fatalf("report file missing or wrong: %v\n%s", err, got)
 	}
-	if !strings.Contains(r.stdout, "ROOT CAUSE ANALYSIS REPORT") {
+	if !strings.Contains(r.stdout, "Incident report:") {
 		t.Fatal("report must also be on screen")
 	}
 }

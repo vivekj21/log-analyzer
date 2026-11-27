@@ -6,10 +6,10 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
+	"k8s-log-analyzer/internal/report"
 	"k8s-log-analyzer/internal/toolbox"
 )
 
@@ -196,11 +196,13 @@ func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.
 	}
 
 	inv.Complete()
-	report := p.compileReport(inv, payload)
+	rep := buildReport(inv, payload)
+	report := rep.Markdown()
 	inv.FinalReport = report
 
 	if p.enableGit {
-		p.persistToGit(inv, payload.RootCause, payload.RawAnalysis, report)
+		// The Git commit must carry the checked category and summary, not the model's raw claim.
+		p.persistToGit(inv, rep.Summary, "ROOT_CAUSE_CATEGORY: "+rep.Category, report)
 		return
 	}
 
@@ -299,26 +301,15 @@ func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protoc
 	p.reportCh <- inv.FinalReport
 }
 
-func (p *ProducerAgent) compileReport(inv *protocol.Investigation, analysis protocol.AnalyzeResponsePayload) string {
-	var sb strings.Builder
-	sb.WriteString("\n╔══════════════════════════════════════════════════════════════════╗\n")
-	sb.WriteString("║            ROOT CAUSE ANALYSIS REPORT                          ║\n")
-	sb.WriteString("╚══════════════════════════════════════════════════════════════════╝\n\n")
-	sb.WriteString(fmt.Sprintf("Investigation ID : %s\n", inv.ID))
-	sb.WriteString(fmt.Sprintf("Namespace        : %s\n", inv.Namespace))
-	if inv.Service != "" {
-		sb.WriteString(fmt.Sprintf("Service          : %s\n", inv.Service))
+// buildReport turns the model's answer into the structured report and checks its quoted
+// evidence against the tool output that was collected.
+func buildReport(inv *protocol.Investigation, analysis protocol.AnalyzeResponsePayload) report.Report {
+	outs := make([]report.Output, 0, len(inv.Evidence))
+	for _, ev := range inv.Evidence {
+		outs = append(outs, report.Output{Tool: ev.ToolName, Text: ev.Output + "\n" + ev.Error})
 	}
-	sb.WriteString(fmt.Sprintf("Duration         : %s\n", inv.CompletedAt.Sub(inv.StartedAt).Round(time.Second)))
-	sb.WriteString(fmt.Sprintf("Evidence Items   : %d\n\n", len(inv.Evidence)))
-	sb.WriteString("─── Symptom ────────────────────────────────────────────────────────\n")
-	sb.WriteString(inv.Symptom + "\n\n")
-	sb.WriteString("─── Evidence Gathered ──────────────────────────────────────────────\n")
-	for i, ev := range inv.Evidence {
-		sb.WriteString(fmt.Sprintf("  [%d] %s (%s)\n", i+1, ev.ToolName, ev.Duration.Round(time.Millisecond)))
-	}
-	sb.WriteString("\n─── Analysis & Deductions ──────────────────────────────────────────\n")
-	sb.WriteString(analysis.RawAnalysis + "\n")
-	sb.WriteString("════════════════════════════════════════════════════════════════════\n")
-	return sb.String()
+	return report.Build(analysis.RawAnalysis, report.Input{
+		ID: inv.ID, Namespace: inv.Namespace, Service: inv.Service, Symptom: inv.Symptom,
+		Duration: inv.CompletedAt.Sub(inv.StartedAt), Outputs: outs,
+	})
 }

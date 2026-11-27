@@ -114,7 +114,7 @@ run() {
   echo; echo "=== scenario: $name (model mode: $mode)"
   if go run ./cmd/analyzer --llm "$mode" --namespace la-demo --service "$svc" \
       --symptom "$symptom" --since 30m --git-repo "$repo" --timeout 4m >"$OUT/$name-$mode.log" 2>&1; then
-    grep -E "Severity|Root Cause" "$OUT/$name-$mode.log" | head -3
+    grep -E "^# Incident report|^\*\*Confidence" "$OUT/$name-$mode.log" | head -3
     f=$(find "$repo" -name '*.md' | head -1)
     if [ -n "$f" ]; then
       echo "--- report excerpt"; sed -n 1,25p "$f"

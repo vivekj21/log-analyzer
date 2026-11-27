@@ -73,11 +73,11 @@ func TestHeuristic_NoTableKeepsOldBehaviour(t *testing.T) {
 // The report shows which line made the rule fire.
 func TestHeuristic_ReportShowsMatchedLine(t *testing.T) {
 	report := runHeuristic(t, "symptom: down\n"+healthyTable("ErrImagePull", "0/1"), "")
-	if !strings.Contains(report, "- Matched heuristic pattern: web-abc 0/1 ErrImagePull 0 5m") {
+	if !strings.Contains(report, "- Matched heuristic pattern: `web-abc 0/1 ErrImagePull 0 5m`") {
 		t.Errorf("evidence line missing:\n%s", report)
 	}
 	report = runHeuristic(t, "payment pod terminated with OOMKilled\nnext line", "")
-	if !strings.Contains(report, "- Matched heuristic pattern: payment pod terminated with OOMKilled\n") || strings.Contains(report, "next line") {
+	if !strings.Contains(report, "- Matched heuristic pattern: `payment pod terminated with OOMKilled`\n") || strings.Contains(report, "next line") {
 		t.Errorf("evidence must be just the matched line:\n%s", report)
 	}
 }

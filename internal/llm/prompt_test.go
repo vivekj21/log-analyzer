@@ -35,3 +35,13 @@ func TestSystemPromptOffersEveryCategoryAndHonestAnswers(t *testing.T) {
 		}
 	}
 }
+
+// The report checks every quoted evidence line against the tool output, so the model must be told to
+// quote exactly, between backticks, and to give the sections the report shows.
+func TestSystemPromptAsksForQuotedEvidenceAndReportSections(t *testing.T) {
+	for _, phrase := range []string{"Copy each line exactly, between backticks", "never quote a line you did not read", "**Ruled out:**", "**Next command:**"} {
+		if !strings.Contains(strings.ToLower(systemPrompt), strings.ToLower(phrase)) {
+			t.Errorf("system prompt lacks %q", phrase)
+		}
+	}
+}

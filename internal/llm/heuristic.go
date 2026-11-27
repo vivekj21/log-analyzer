@@ -164,7 +164,7 @@ func lineWith(text, word string) string {
 func formatHeuristicReport(category, explanation, evidence string) string {
 	ev := "Matched heuristic pattern"
 	if evidence != "" {
-		ev += ": " + evidence
+		ev += ": `" + strings.ReplaceAll(evidence, "`", "'") + "`"
 	}
 	return fmt.Sprintf("Root Cause: %s\nConfidence: HIGH\nEvidence:\n- %s\n\nRecommendations:\n1. Apply standard remediation for %s.\n\nROOT_CAUSE_CATEGORY: %s\n",
 		explanation, ev, category, category)
