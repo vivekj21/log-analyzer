@@ -25,6 +25,7 @@ type ProducerAgent struct {
 	repoDir        string
 	createBranch   bool
 	onFinish       func(string)
+	onResult       func(Result)
 	fetcher        *FetcherAgent
 	mu             sync.Mutex
 }
@@ -197,17 +198,17 @@ func (p *ProducerAgent) handleAnalyzeResponse(ctx context.Context, msg protocol.
 
 	inv.Complete()
 	rep := buildReport(inv, payload)
-	report := rep.Markdown()
-	inv.FinalReport = report
+	md := rep.Markdown()
+	inv.FinalReport = md
 
 	if p.enableGit {
 		// The Git commit must carry the checked category and summary, not the model's raw claim.
-		p.persistToGit(inv, rep.Summary, "ROOT_CAUSE_CATEGORY: "+rep.Category, report)
+		p.persistToGit(inv, rep.Summary, "ROOT_CAUSE_CATEGORY: "+rep.Category, md)
 		return
 	}
 
 	p.finish(inv.ID)
-	p.reportCh <- report
+	p.deliver(Result{ID: inv.ID, Status: StatusDone, Markdown: md, Report: &rep}, md)
 }
 
 func (p *ProducerAgent) handleError(ctx context.Context, msg protocol.Message) {
@@ -223,7 +224,8 @@ func (p *ProducerAgent) handleError(ctx context.Context, msg protocol.Message) {
 	if inv != nil {
 		inv.Fail()
 		p.finish(inv.ID)
-		p.reportCh <- fmt.Sprintf("Investigation Failed: [%s] %s\n", payload.Code, payload.Message)
+		text := fmt.Sprintf("Investigation Failed: [%s] %s\n", payload.Code, payload.Message)
+		p.deliver(Result{ID: inv.ID, Status: StatusFailed, Markdown: text, Error: fmt.Sprintf("[%s] %s", payload.Code, payload.Message)}, text)
 	}
 }
 
@@ -262,7 +264,8 @@ func (p *ProducerAgent) forceComplete(inv *protocol.Investigation, reason string
 	}
 
 	p.finish(inv.ID)
-	p.reportCh <- inv.FinalReport
+	pr := partialReport(inv, reason)
+	p.deliver(Result{ID: inv.ID, Status: StatusPartial, Markdown: inv.FinalReport, Report: &pr}, inv.FinalReport)
 }
 
 func (p *ProducerAgent) persistToGit(inv *protocol.Investigation, rootCause, raw, report string) {
@@ -298,7 +301,70 @@ func (p *ProducerAgent) handleGitPersistResponse(ctx context.Context, msg protoc
 	}
 
 	p.finish(inv.ID)
-	p.reportCh <- inv.FinalReport
+	p.deliver(Result{ID: inv.ID, Status: StatusDone, Markdown: inv.FinalReport}, inv.FinalReport)
+}
+
+// Result statuses.
+const (
+	StatusDone    = "done"    // the investigation finished and produced a report
+	StatusPartial = "partial" // it ran out of rounds; the report says it cannot tell
+	StatusFailed  = "failed"  // a tool or the model failed; there is no report
+)
+
+// Result is how an investigation ended. The command line prints the text; the REST service
+// (internal/serve) uses the structured report.
+type Result struct {
+	ID       string
+	Status   string
+	Markdown string
+	Report   *report.Report // nil when Status is failed, or when Git is on
+	Error    string         // set when Status is failed
+}
+
+// SetResultHandler sends every finished investigation to fn instead of the report channel.
+func (p *ProducerAgent) SetResultHandler(fn func(Result)) {
+	p.mu.Lock()
+	p.onResult = fn
+	p.mu.Unlock()
+}
+
+// deliver hands a finished investigation to the result handler if there is one, else to the
+// report channel the command line reads.
+func (p *ProducerAgent) deliver(r Result, text string) {
+	p.mu.Lock()
+	fn := p.onResult
+	p.mu.Unlock()
+	if fn != nil {
+		fn(r)
+		return
+	}
+	p.reportCh <- text
+}
+
+// Cancel stops an investigation that is still running (for example, one that timed out).
+// Later messages for it are ignored, and its state is released.
+func (p *ProducerAgent) Cancel(id string) {
+	p.mu.Lock()
+	inv := p.investigations[id]
+	p.mu.Unlock()
+	if inv == nil {
+		return
+	}
+	inv.Fail()
+	p.finish(id)
+}
+
+// partialReport is the structured form of a run that did not finish.
+func partialReport(inv *protocol.Investigation, reason string) report.Report {
+	return report.Report{
+		ID: inv.ID, Namespace: inv.Namespace, Service: inv.Service, Symptom: inv.Symptom,
+		Category: llm.CategoryCannotDetermine, Confidence: "LOW",
+		Summary:       "Cannot tell. The investigation did not finish: " + reason,
+		Evidence:      []report.Evidence{},
+		EvidenceCheck: report.Check{Result: "not_needed"},
+		Notes:         []string{"The investigation stopped before it reached a conclusion."},
+		ToolCalls:     len(inv.Evidence),
+	}
 }
 
 // buildReport turns the model's answer into the structured report and checks its quoted

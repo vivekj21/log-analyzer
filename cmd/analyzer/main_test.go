@@ -381,16 +381,20 @@ func TestNoArgumentsExplainsInsteadOfFailingOddly(t *testing.T) {
 	}
 }
 
-// Every flag defined in main.go must appear in --help, so help can never fall behind.
+// Every flag defined in main.go and setup.go must appear in --help, so help can never fall behind.
 func TestHelpListsEveryFlag(t *testing.T) {
-	src, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
+	var src []byte
+	for _, f := range []string{"main.go", "setup.go"} { // the model flags live in setup.go
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src = append(src, b...)
 	}
-	re := regexp.MustCompile(`flag\.(?:String|Bool|Duration|Int)\("([a-z-]+)"`)
+	re := regexp.MustCompile(`(?:flag|fs)\.(?:String|Bool|Duration|Int)\("([a-z-]+)"`)
 	names := re.FindAllStringSubmatch(string(src), -1)
 	if len(names) < 15 {
-		t.Fatalf("expected to find the flags in main.go, found %d", len(names))
+		t.Fatalf("expected to find the flags in main.go and setup.go, found %d", len(names))
 	}
 	e := newEnv(t)
 	r := run(t, e.work, e.home, e.noGit, "--help")

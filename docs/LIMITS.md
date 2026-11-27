@@ -19,4 +19,5 @@ Log Analyzer is an early release (v0.1.0). This page lists what you should know 
 
 ## Running it
 - **Model names expire.** Keep `--model` current. Free tiers have low limits.
-- **Enterprise features are planned, not built:** an audit trail, access control, an approval workflow, alert triggers and shared report storage. See [ROADMAP.md](ROADMAP.md).
+- **The REST API (`log-analyzer serve`) is new.** It runs one investigation at a time, keeps reports in memory for an hour, speaks plain HTTP (put TLS in front of it when you open it to the network) and has not run against a production cluster. See [API.md](API.md).
+- **Enterprise features are planned, not built:** an audit trail, per-user access control, an approval workflow and shared report storage. See [ROADMAP.md](ROADMAP.md).

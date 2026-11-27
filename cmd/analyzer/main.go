@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"k8s-log-analyzer/internal/agent"
-	"k8s-log-analyzer/internal/creds"
 	"k8s-log-analyzer/internal/llm"
 	"k8s-log-analyzer/internal/protocol"
 	"k8s-log-analyzer/internal/redact"
@@ -21,29 +20,28 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		runServe(os.Args[2:])
+		return
+	}
 	var (
 		logFile      = flag.String("log-file", "", "Path to a raw log file to analyze (offline rules, plus a model service if a key is set)")
 		namespace    = flag.String("namespace", "default", "Kubernetes namespace to investigate")
 		service      = flag.String("service", "", "Target microservice/workload name (optional)")
 		symptom      = flag.String("symptom", "CrashLoopBackOff and high 5xx error rate observed in logs", "Incident symptom description")
 		since        = flag.String("since", "1h", "Time window for investigation logs and events (e.g., 30m, 1h, 24h)")
-		provider     = flag.String("provider", envOr("LLM_PROVIDER", llm.ProviderGemini), "Model service: gemini, openai (any OpenAI-compatible server: OpenAI, Groq, OpenRouter, Mistral, Ollama ...) or anthropic (env LLM_PROVIDER)")
-		baseURL      = flag.String("base-url", os.Getenv("LLM_BASE_URL"), "Server address for --provider=openai or anthropic, e.g. https://api.groq.com/openai/v1 (env LLM_BASE_URL). https only, except localhost")
-		allowHTTP    = flag.Bool("allow-http", os.Getenv("LLM_ALLOW_HTTP") == "true", "Allow plain http to a model server on another machine (for example inside your cluster). The key and logs are then NOT encrypted in transit (env LLM_ALLOW_HTTP=true)")
-		apiKeyFile   = flag.String("api-key-file", "", "Read the model API key from this file (env LLM_API_KEY_FILE does the same). Wins over the environment variables")
-		keyFile      = flag.String("gemini-key-file", "", "Same as --api-key-file, kept for existing setups; only for --provider=gemini (env GEMINI_API_KEY_FILE)")
-		modelName    = flag.String("model", "", "Model name (env LLM_MODEL). Gemini has a built-in default (env GEMINI_MODEL); openai and anthropic need one")
-		llmMode      = flag.String("llm", "live", "LLM execution mode: live, record, replay, heuristic")
-		recordDir    = flag.String("recordings-dir", "recordings", "Directory to store/read LLM recordings")
 		caseID       = flag.String("case-id", "", "Case ID for recordings/replay naming (defaults to generated ID)")
-		dryRun       = flag.Bool("dry-run", false, "Execute kubectl in dry-run mode (logs commands instead of invoking cluster)")
 		timeout      = flag.Duration("timeout", 10*time.Minute, "Overall investigation timeout")
 		enableGit    = flag.Bool("git", false, "Also commit the report into a Git repository. Off by default. Needs git on your PATH. Giving --git-repo turns it on")
 		gitRepo      = flag.String("git-repo", "", "Git repository for the commit (default with --git: ~/log-analyzer-incidents). Giving this flag turns --git on")
 		output       = flag.String("output", "", "Also save the report as a markdown file. A folder (existing, or ending in /) gets a new, named file; any other value is the file to write")
 		showVersion  = flag.Bool("version", false, "Print the version and exit")
+		server       = flag.String("server", os.Getenv("LOG_ANALYZER_SERVER"), "Ask a running `log-analyzer serve` instead of investigating here, for example 127.0.0.1:8080 (env LOG_ANALYZER_SERVER)")
+		tokenFile    = flag.String("token-file", "", "File holding the token for --server (env LOG_ANALYZER_TOKEN_FILE or LOG_ANALYZER_TOKEN do the same)")
 		createBranch = flag.Bool("branch", false, "Create a separate git branch for the incident (default false: commit to current branch)")
 	)
+	mf := registerModelFlags(flag.CommandLine)
+	provider, modelName, llmMode, recordDir, dryRun := mf.provider, mf.modelName, mf.llmMode, mf.recordDir, mf.dryRun
 	flag.StringVar(output, "o", "", "Short for --output")
 	flag.Usage = usage
 	if noArguments() {
@@ -55,53 +53,14 @@ func main() {
 		fmt.Println(versionString())
 		return
 	}
+	if *server != "" {
+		os.Exit(runClient(clientArgs{server: *server, tokenFile: *tokenFile, output: *output,
+			namespace: *namespace, service: *service, symptom: *symptom, since: *since, timeout: *timeout, set: flagsSet()}))
+	}
 	gitOn := gitRequested(flagsSet(), *enableGit, *gitRepo)
 
-	if *modelName == "" {
-		*modelName = os.Getenv("LLM_MODEL")
-	}
-	if *modelName == "" && *provider == llm.ProviderGemini {
-		*modelName = llm.ModelFromEnv()
-	}
-	if *keyFile != "" && *provider != llm.ProviderGemini {
-		log.Fatalf("--gemini-key-file only works with --provider=gemini. Use --api-key-file instead.")
-	}
-
-	// Key sources, first one that has a key wins. The Gemini-named sources only apply to the Gemini
-	// provider, so a Gemini key can never be sent to another service by mistake.
-	// A key file that is set but unusable stops the program; it never falls back to another source.
-	warn := func(m string) { log.Printf("[Creds] WARNING: %s", m) }
-	sources := []creds.Provider{creds.FileProvider("--api-key-file", *apiKeyFile, warn)}
-	if *provider == llm.ProviderGemini {
-		sources = append(sources, creds.FileProvider("--gemini-key-file", *keyFile, warn))
-	}
-	sources = append(sources, creds.FileProvider("LLM_API_KEY_FILE", os.Getenv("LLM_API_KEY_FILE"), warn))
-	if *provider == llm.ProviderGemini {
-		sources = append(sources, creds.FileProvider("GEMINI_API_KEY_FILE", os.Getenv("GEMINI_API_KEY_FILE"), warn))
-	}
-	sources = append(sources, creds.EnvProvider("LLM_API_KEY", os.Getenv))
-	switch *provider {
-	case llm.ProviderGemini:
-		sources = append(sources, creds.EnvProvider("GEMINI_API_KEY", os.Getenv))
-	case llm.ProviderOpenAI:
-		sources = append(sources, creds.EnvProvider("OPENAI_API_KEY", os.Getenv))
-	case llm.ProviderAnthropic:
-		sources = append(sources, creds.EnvProvider("ANTHROPIC_API_KEY", os.Getenv))
-	}
-	apiKey, keySource, keyErr := creds.Resolve(sources...)
-	if keyErr != nil {
-		log.Fatalf("Cannot load the API key: %v", keyErr)
-	}
-	if apiKey != "" {
-		log.Printf("[Creds] API key for provider %s loaded from %s", *provider, keySource)
-	}
-	cfg := llm.ProviderConfig{Provider: *provider, APIKey: apiKey, Model: *modelName, BaseURL: *baseURL, AllowHTTP: *allowHTTP}
-	if *allowHTTP && strings.HasPrefix(*baseURL, "http://") {
-		log.Printf("[LLM] WARNING: plain http to %s. The key and your logs are not encrypted on the way.", *baseURL)
-	}
-	if err := cfg.Validate(); err != nil {
-		log.Fatalf("Invalid model settings: %v", err)
-	}
+	rs := mf.resolve()
+	apiKey, cfg := rs.APIKey, rs.Cfg
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -160,33 +119,8 @@ func main() {
 	bus := protocol.NewAgentBus(100)
 
 	// 4. Model Selection (live, record, replay, heuristic)
-	var model llm.Model
-	switch *llmMode {
-	case "heuristic":
-		model = llm.NewHeuristicModel()
-		log.Println("[Model] Initialized rule-based Heuristic analyzer")
-	case "replay":
-		model = llm.NewRecorder(llm.ModeReplay, *recordDir, nil)
-		log.Printf("[Model] Initialized Recorder in REPLAY mode (dir: %s)", *recordDir)
-	case "record":
-		liveClient, err := llm.NewLive(ctx, cfg, toolRegistry)
-		if err != nil {
-			log.Fatalf("Failed to initialize the reasoning client: %v", err)
-		}
-		defer liveClient.Close()
-		model = llm.NewRecorder(llm.ModeRecord, *recordDir, llm.NewCategoryGuard(liveClient))
-		log.Printf("[Model] Initialized Recorder in RECORD mode (dir: %s)", *recordDir)
-	case "live":
-		liveClient, err := llm.NewLive(ctx, cfg, toolRegistry)
-		if err != nil {
-			log.Fatalf("Failed to initialize the reasoning client: %v", err)
-		}
-		defer liveClient.Close()
-		model = llm.NewCategoryGuard(liveClient)
-		log.Printf("[Model] Initialized live reasoning client (%s, %s)", *provider, *modelName)
-	default:
-		log.Fatalf("Invalid --llm mode: %q. Must be one of: live, record, replay, heuristic", *llmMode)
-	}
+	model, closeModel := buildModel(ctx, *llmMode, cfg, toolRegistry, *recordDir)
+	defer closeModel()
 
 	// 5. Instantiate and Launch 4 Agents
 	reportChan := make(chan string, 1)

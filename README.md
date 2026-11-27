@@ -74,6 +74,17 @@ sequenceDiagram
 - **Tested like software.** 8 prompt-injection attack cases, all defended; a fake "obedient" AI that proves the code blocks forbidden requests; offline replay in CI.
 - **A human decides.** Fixes are written as text suggestions. The approver denies every action by default.
 
+## Ways to run it
+
+| How | Good for | Status |
+|---|---|---|
+| The program on a log file: `log-analyzer --log-file app.log` | trying it, nothing installed or sent | works |
+| The program on a cluster, from your laptop (uses your `kubectl`) | an engineer on call | works |
+| Inside the cluster with the Helm chart (a one-off Job, read-only account) | a team | works, tested on k3d only |
+| The container image on its own (Docker or any scheduler) | CI jobs and other platforms | works |
+| As a web service: `log-analyzer serve`, asked with `log-analyzer --server ...` or over HTTP ([REST API](docs/API.md)) | alerts, dashboards, chat bots, a shared team server | works, see step 7 |
+| The web service in the cluster (Helm Deployment and Service) | a team that wants it always on | planned |
+
 ## Quick start
 
 Read this part top to bottom. Each step adds one thing, and every step after the first is optional.
@@ -214,6 +225,18 @@ Both create their own cluster and delete it afterwards. To run the chart with re
 
 If the rule-based model has nothing to go on, it answers `CANNOT_DETERMINE` ("cannot tell"). That is not the same as "no fault".
 
+### 7. Run it as a service and ask it (REST API, optional)
+
+```
+log-analyzer serve
+log-analyzer --server 127.0.0.1:8080 --namespace shop
+```
+
+Run the first line in one terminal and the second in another. The second line is the same command as a
+local run, with `--server`, and it prints the finished report. Scripts, dashboards and Alertmanager can
+make the same call over HTTP. The server listens on this computer only, so it needs no token. To open it
+to the network it needs one, and it refuses to start without it. Everything is in [docs/API.md](docs/API.md).
+
 ## Verify a download
 
 Each release has a file `checksums.txt` that lists every download with its fingerprint. Three checks, from simple to strong. Do at least the first one.
@@ -294,7 +317,9 @@ The Go code is built and tested on Linux, macOS and Windows on every change. The
 ```
 cmd/analyzer      the program
 cmd/eval          attack tests against recorded or live AI answers
-internal/agent    producer, fetcher, analyzer, git agent
+internal/agent    producer, fetcher, analyzer, git agent, and the service that runs one investigation at a time
+internal/report   builds the report from the answer and checks the quoted evidence
+internal/serve    the REST API (log-analyzer serve)
 internal/toolbox  the 10 read-only tools, validation, policy
 internal/redact   secret masking
 internal/llm      model clients (Gemini, OpenAI-compatible, Anthropic), recorder, cost limits
@@ -302,7 +327,7 @@ internal/protocol messages between agents
 internal/ttlmap   map whose idle entries expire
 evals/            attack cases and results
 deploy/helm       Helm chart
-docs/             SECURITY.md, CONFIG.md, DATA-FLOW.md, LIMITS.md, ROADMAP.md, guide/
+docs/             SECURITY.md, CONFIG.md, API.md, DATA-FLOW.md, LIMITS.md, ROADMAP.md, guide/
 testdata/         sample logs
 incidents/        reports written by early runs
 ```

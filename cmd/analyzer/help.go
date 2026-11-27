@@ -12,12 +12,14 @@ Kubernetes cluster. The report is always shown on the screen. Saving it is optio
 USAGE
   log-analyzer --log-file FILE [options]       analyze a log file (no cluster needed)
   log-analyzer --namespace NAME [options]      investigate a Kubernetes cluster (needs kubectl)
+  log-analyzer serve [options]                 run as a web service (REST API); see: log-analyzer serve --help
 
 EXAMPLES
   log-analyzer --log-file app.log                          try it: nothing is saved, nothing is sent
   log-analyzer --log-file app.log --output report.md       also keep a copy as a file
   log-analyzer --log-file app.log --git-repo ~/incidents   also commit it to a Git repository
   log-analyzer --namespace shop --service cart --api-key-file ~/.keys/gemini
+  log-analyzer --server 127.0.0.1:8080 --namespace shop    ask a running "log-analyzer serve"
 
 WHAT TO ANALYZE
   --log-file FILE      a raw log file to analyze
@@ -42,6 +44,11 @@ AI MODEL (optional: without a key, built-in rules run and nothing leaves your co
   --allow-http         allow plain http to a model server on another machine (not encrypted)
   --gemini-key-file F  same as --api-key-file; kept for existing setups
   --llm MODE           live (default), heuristic (rules only, nothing sent), record, replay
+
+ASKING A RUNNING SERVER (instead of investigating from this computer)
+  --server ADDRESS     ask a running "log-analyzer serve", for example 127.0.0.1:8080. It takes the same
+                       --namespace, --service, --symptom, --since and --output as a local run
+  --token-file FILE    the token for that server, if it needs one (env LOG_ANALYZER_TOKEN_FILE also works)
 
 OTHER
   --version            print the version and exit
