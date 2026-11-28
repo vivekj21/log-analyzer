@@ -83,7 +83,7 @@ sequenceDiagram
 | Inside the cluster with the Helm chart (a one-off Job, read-only account) | a team | works, tested on k3d only |
 | The container image on its own (Docker or any scheduler) | CI jobs and other platforms | works |
 | As a web service: `log-analyzer serve`, asked with `log-analyzer --server ...` or over HTTP ([REST API](docs/API.md)) | alerts, dashboards, chat bots, a shared team server | works, see step 7 |
-| The web service in the cluster (Helm Deployment and Service) | a team that wants it always on | planned |
+| The web service in the cluster (Helm Deployment and Service, `server.enabled=true`) | a team that wants it always on | works, tested on k3d only |
 
 ## Quick start
 
@@ -207,6 +207,17 @@ kubectl logs -f job/inv1
 The Job prints the report to its log (`kubectl logs`) and also commits it to a Git repository inside the pod at `/data/incidents`.
 
 In live mode the chart mounts your Secret as a read-only file, not as an environment variable. The chart's default is `llm.mode=heuristic`: nothing leaves the cluster, but it is less accurate. Live mode sends masked log text to Gemini and needs the `acknowledgeDataLeavesCluster` switch. See [docs/DATA-FLOW.md](docs/DATA-FLOW.md).
+
+**Always on, as a web service.** Instead of a one-off Job, the chart can run `log-analyzer serve` in your cluster. List the namespaces it may read:
+
+```bash
+helm install la deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={shop,payments}'
+kubectl get secret la-token -o jsonpath='{.data.token}' | base64 -d > token
+kubectl port-forward svc/la 8080:8080 &
+log-analyzer --server 127.0.0.1:8080 --token-file token --namespace shop
+```
+
+The chart makes a random token (a Secret, mounted as a file) and keeps it when you upgrade. To use your own, create a Secret with the key `token` and set `server.tokenSecret`. The service uses the same read-only account as the Job, with one Role in each listed namespace. It speaks plain http: putting TLS in front of it is your ingress's job. Reports are kept in memory for one hour and are lost when the pod restarts. Model settings (`llm.*`) are the same as for the Job. See [docs/API.md](docs/API.md) for the calls.
 
 The chart grants read-only access to the investigated namespace only (`investigation.namespace`, which must already exist), and no ConfigMap access by default. Set `rbac.clusterWide=true` to allow reading every namespace; the node tool (`get_node_conditions`) needs that.
 

@@ -15,7 +15,7 @@ structured reports whose quoted evidence is checked against the tool output, and
 4. Credentials: a plugin mechanism plus a good built-in one.
 
 ## Next: make it easy to adopt
-5. A Helm Deployment and Service for `serve`, so a team can run it always on.
+5. Done: a Helm Deployment and Service for `serve` (`server.enabled=true`), tested on k3d. Still open: a TLS option, and a test under real load.
 6. Push finished reports to Slack or a webhook, so nobody has to poll when an alert fires.
 
 ## Later: after the core is solid

@@ -1,49 +1,59 @@
 {{- if .Values.rbac.create }}
-{{- /* Default: read access only in the namespace being investigated (a Role). rbac.clusterWide=true gives the older cluster-wide role, which is also what the node tool needs. */}}
-{{- $ns := .Values.investigation.namespace }}
+{{- /* Default: read access only in the namespaces being investigated (one Role each). rbac.clusterWide=true gives one cluster-wide role, which is also what the node tool needs. */}}
 {{- $sa := .Values.serviceAccount.name | default .Release.Name }}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: {{ if .Values.rbac.clusterWide }}ClusterRole{{ else }}Role{{ end }}
-metadata:
-  name: {{ .Release.Name }}-reader
-  {{- if not .Values.rbac.clusterWide }}
-  namespace: {{ $ns }}
-  {{- end }}
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "endpoints"{{ if .Values.rbac.clusterWide }}, "nodes"{{ end }}]
-    verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list"]
-  - apiGroups: ["autoscaling"]
-    resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list"]
-  - apiGroups: ["discovery.k8s.io"]
-    resources: ["endpointslices"]
-    verbs: ["get", "list"]
-  - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods"{{ if .Values.rbac.clusterWide }}, "nodes"{{ end }}]
-    verbs: ["get", "list"]
-{{- if .Values.rbac.allowConfigMaps }}
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get"]
+{{- $name := printf "%s-reader" .Release.Name }}
+{{- $nss := list .Values.investigation.namespace }}
+{{- if .Values.server.enabled }}{{- $nss = .Values.server.namespaces }}{{- end }}
+{{- if and .Values.server.enabled (not .Values.rbac.clusterWide) (not $nss) }}
+{{- fail "server.namespaces is required: list the namespaces the service may read (for example server.namespaces={shop}), or set rbac.clusterWide=true" }}
 {{- end }}
+{{- $root := . }}
+{{- if .Values.rbac.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+rules:
+{{- include "log-analyzer.rules" . | nindent 2 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: {{ if .Values.rbac.clusterWide }}ClusterRoleBinding{{ else }}RoleBinding{{ end }}
+kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-reader
-  {{- if not .Values.rbac.clusterWide }}
-  namespace: {{ $ns }}
-  {{- end }}
+  name: {{ $name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: {{ if .Values.rbac.clusterWide }}ClusterRole{{ else }}Role{{ end }}
-  name: {{ .Release.Name }}-reader
+  kind: ClusterRole
+  name: {{ $name }}
 subjects:
   - kind: ServiceAccount
     name: {{ $sa }}
     namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- range $i, $ns := $nss }}
+{{- if $i }}
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+rules:
+{{- include "log-analyzer.rules" $root | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}
 {{- end }}

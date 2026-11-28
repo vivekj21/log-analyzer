@@ -8,7 +8,7 @@ case "$LLM_MODE" in heuristic|live) ;; *) echo "LLM_MODE must be heuristic or li
 if [ "$LLM_MODE" = live ] && [ -z "${GEMINI_API_KEY:-}" ]; then echo "LLM_MODE=live needs GEMINI_API_KEY in the environment"; exit 1; fi
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:$PATH"
-for c in kubectl k3d docker curl; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
+for c in kubectl k3d docker curl go base64; do command -v "$c" >/dev/null || { echo "missing tool: $c"; exit 1; }; done
 if ! command -v helm >/dev/null; then
   echo "== installing helm v3.16.4 into ~/.local/bin"
   mkdir -p ~/.local/bin; t=$(mktemp -d)
@@ -20,7 +20,8 @@ echo "== building image"; docker build -q -t "$IMG" . >/dev/null || { echo "dock
 NAME="la-helm-$$"; PREV=$(kubectl config current-context 2>/dev/null || true)
 echo "== creating throwaway cluster $NAME"
 k3d cluster create "$NAME" --servers 1 --agents 0 --no-lb --timeout 240s --k3s-arg "--disable=traefik@server:0" || { k3d cluster delete "$NAME" >/dev/null 2>&1; exit 1; }
-cleanup() { [ -n "$PREV" ] && kubectl config use-context "$PREV" >/dev/null 2>&1; echo "== deleting $NAME"; k3d cluster delete "$NAME"; }
+PF_PID=""
+cleanup() { [ -n "$PF_PID" ] && kill "$PF_PID" >/dev/null 2>&1; [ -n "$PREV" ] && kubectl config use-context "$PREV" >/dev/null 2>&1; echo "== deleting $NAME"; k3d cluster delete "$NAME"; }
 trap cleanup EXIT
 kubectl config use-context "k3d-$NAME" >/dev/null
 case "$(kubectl config current-context)" in k3d-*) ;; *) echo "refusing: not a k3d context"; exit 1;; esac
@@ -72,5 +73,38 @@ FAIL=0
 if [ "$LLM_MODE" = live ]; then WANT="CRASHLOOP_BAD_CONFIG"; else WANT="ROOT_CAUSE_CATEGORY: CRASHLOOP_BAD_CONFIG"; fi
 grep -q "$WANT" /tmp/helm-k3d-job.log && echo "CHECK OK: category" || { echo "CHECK FAILED: category"; FAIL=1; }
 grep -q "Recorded & committed" /tmp/helm-k3d-job.log && echo "CHECK OK: committed" || { echo "CHECK FAILED: not committed"; FAIL=1; }
+
+# ---- the web service in the cluster, asked through a port-forward with the real `log-analyzer --server` client ----
+echo "== installing the web service (server.enabled=true)"
+helm install srv deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={la-demo}' \
+  --set llm.mode="$LLM_MODE" "${SECRET_ARGS[@]}" || { echo "CHECK FAILED: web service install"; exit 1; }
+kubectl rollout status deploy/srv --timeout=120s || { kubectl describe pod -l app.kubernetes.io/instance=srv | tail -30; kubectl logs deploy/srv | tail -20; echo "CHECK FAILED: web service did not become ready"; exit 1; }
+kubectl logs deploy/srv 2>&1 | grep -q "serve is ready" && echo "CHECK OK: service started" || { echo "CHECK FAILED: no start message"; FAIL=1; }
+TOK=$(mktemp); kubectl get secret srv-token -o jsonpath='{.data.token}' | base64 -d > "$TOK"; chmod 600 "$TOK"
+[ "$(wc -c < "$TOK")" -ge 16 ] && echo "CHECK OK: token secret exists" || { echo "CHECK FAILED: token secret"; FAIL=1; }
+kubectl port-forward svc/srv 18083:8080 >/tmp/helm-k3d-pf.log 2>&1 &
+PF_PID=$!
+for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18083/healthz >/dev/null 2>&1 && break; sleep 1; done
+curl -fsS http://127.0.0.1:18083/healthz >/dev/null 2>&1 && echo "CHECK OK: /healthz through the Service" || { echo "CHECK FAILED: healthz"; cat /tmp/helm-k3d-pf.log; FAIL=1; }
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18083/v1/investigations -d '{"namespace":"la-demo"}')
+[ "$CODE" = 401 ] && echo "CHECK OK: no token is refused (401)" || { echo "CHECK FAILED: no token gave $CODE, wanted 401"; FAIL=1; }
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18083/v1/investigations -H "Authorization: Bearer $(cat "$TOK")" -d '{"namespace":"kube-system"}')
+[ "$CODE" = 403 ] && echo "CHECK OK: namespace outside the allowed list is refused (403)" || { echo "CHECK FAILED: kube-system gave $CODE, wanted 403"; FAIL=1; }
+echo "== asking the service with the real client"
+go build -o /tmp/la-client ./cmd/analyzer || { echo "CHECK FAILED: client build"; exit 1; }
+/tmp/la-client --server 127.0.0.1:18083 --token-file "$TOK" --namespace la-demo --service config-demo \
+  --symptom "pod in CrashLoopBackOff right after deploy" > /tmp/helm-k3d-srv.log 2>&1
+tail -30 /tmp/helm-k3d-srv.log
+grep -q "$WANT" /tmp/helm-k3d-srv.log && echo "CHECK OK: service report has the right category" || { echo "CHECK FAILED: service report category"; FAIL=1; }
+SA=system:serviceaccount:default:srv
+[ "$(kubectl auth can-i get pods -n la-demo --as=$SA)" = yes ]         && echo "CHECK OK: service account can read pods in la-demo"       || { echo "CHECK FAILED: cannot read pods in la-demo"; FAIL=1; }
+[ "$(kubectl auth can-i get pods -n kube-system --as=$SA)" = no ]      && echo "CHECK OK: service account cannot read other namespaces"  || { echo "CHECK FAILED: can read kube-system"; FAIL=1; }
+[ "$(kubectl auth can-i get secrets -n la-demo --as=$SA)" = no ]       && echo "CHECK OK: service account cannot read secrets"           || { echo "CHECK FAILED: can read secrets"; FAIL=1; }
+[ "$(kubectl auth can-i delete pods -n la-demo --as=$SA)" = no ]       && echo "CHECK OK: service account cannot change anything"        || { echo "CHECK FAILED: can delete pods"; FAIL=1; }
+echo "== upgrading: the token must stay the same"
+helm upgrade srv deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={la-demo}' --set server.queue=4 \
+  --set llm.mode="$LLM_MODE" "${SECRET_ARGS[@]}" >/dev/null || { echo "CHECK FAILED: upgrade"; FAIL=1; }
+[ "$(kubectl get secret srv-token -o jsonpath='{.data.token}' | base64 -d)" = "$(cat "$TOK")" ] && echo "CHECK OK: token kept on upgrade" || { echo "CHECK FAILED: token changed on upgrade"; FAIL=1; }
+
 [ "$FAIL" = 0 ] && echo "HELM E2E PASS" || echo "HELM E2E FAIL"
 exit "$FAIL"

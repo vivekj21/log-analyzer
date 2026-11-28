@@ -1,0 +1,120 @@
+{{- if .Values.server.enabled }}
+{{- $tokenSecret := .Values.server.tokenSecret }}
+{{- if not $tokenSecret }}
+{{- $tokenSecret = printf "%s-token" .Release.Name }}
+{{- /* A random token, made once and kept on upgrades (looked up from the cluster). */}}
+{{- $tok := randAlphaNum 40 }}
+{{- $old := lookup "v1" "Secret" .Release.Namespace $tokenSecret }}
+{{- if $old }}{{- $tok = index $old.data "token" | b64dec }}{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $tokenSecret }}
+  labels:
+    app.kubernetes.io/name: log-analyzer
+type: Opaque
+stringData:
+  token: {{ $tok | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: log-analyzer
+spec:
+  replicas: 1             # one copy: reports are kept in memory and one investigation runs at a time
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: log-analyzer
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: log-analyzer
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001          # lets the app read the mounted token and key files (mode 0440)
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: analyzer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - {{ printf "--listen=0.0.0.0:%v" .Values.server.port | quote }}
+            - "--token-file=/var/run/secrets/la-token/token"
+            - {{ printf "--queue=%v" .Values.server.queue | quote }}
+            - {{ printf "--timeout=%s" .Values.server.timeout | quote }}
+            - {{ printf "--llm=%s" .Values.llm.mode | quote }}
+            {{- if .Values.server.namespaces }}
+            - {{ printf "--namespaces=%s" (join "," .Values.server.namespaces) | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          env:
+            - name: HOME
+              value: /tmp
+            {{- include "log-analyzer.modelEnv" . | trim | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: token
+              mountPath: /var/run/secrets/la-token
+              readOnly: true
+            {{- if eq .Values.llm.mode "live" }}
+            {{- include "log-analyzer.keyMount" . | trim | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: token
+          secret:
+            secretName: {{ $tokenSecret }}
+            defaultMode: 0440
+            items:
+              - key: token
+                path: token
+        {{- if eq .Values.llm.mode "live" }}
+        {{- include "log-analyzer.keyVolume" . | trim | nindent 8 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: log-analyzer
+spec:
+  type: {{ .Values.server.serviceType }}
+  selector:
+    app.kubernetes.io/name: log-analyzer
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.server.port }}
+      targetPort: http
+{{- end }}

@@ -1,3 +1,15 @@
+{{- if .Values.server.enabled }}
+Web service {{ .Release.Name }} is starting (llm.mode={{ .Values.llm.mode }}). It speaks plain http: put TLS in front of it (your ingress) before using it off the cluster.
+{{- if eq .Values.llm.mode "live" }}
+Log text from your cluster is sent to the {{ .Values.llm.provider }} model service{{ if .Values.llm.baseUrl }} at {{ .Values.llm.baseUrl }}{{ end }} (secrets and email addresses masked).
+{{- else }}
+Nothing leaves the cluster. The rule-based model is less accurate than live mode: see accuracy/RESULTS.md.
+{{- end }}
+Token:        kubectl get secret {{ .Values.server.tokenSecret | default (printf "%s-token" .Release.Name) }} -n {{ .Release.Namespace }} -o jsonpath='{.data.token}' | base64 -d > token
+Reach it:     kubectl port-forward svc/{{ .Release.Name }} 8080:{{ .Values.server.port }} -n {{ .Release.Namespace }}
+Ask it:       log-analyzer --server 127.0.0.1:8080 --token-file token --namespace {{ if .Values.server.namespaces }}{{ first .Values.server.namespaces }}{{ else }}NAMESPACE{{ end }}
+Reports are kept in memory for one hour and are lost when the pod restarts.
+{{- else }}
 Investigation started as Job {{ .Release.Name }} (llm.mode={{ .Values.llm.mode }}).
 {{- if eq .Values.llm.mode "live" }}
 Log text from your cluster is being sent to the {{ .Values.llm.provider }} model service{{ if .Values.llm.baseUrl }} at {{ .Values.llm.baseUrl }}{{ end }} (secrets and email addresses masked).
@@ -8,4 +20,5 @@ Watch it:     kubectl logs -f job/{{ .Release.Name }} -n {{ .Release.Namespace }
 Run again:    helm uninstall {{ .Release.Name }} && helm install {{ .Release.Name }} ...
 {{- if not .Values.storage.persistence }}
 Reports are kept only in the log output: set storage.persistence=true to keep the files.
+{{- end }}
 {{- end }}

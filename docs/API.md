@@ -98,6 +98,15 @@ The server speaks plain HTTP. If you open it to the network, put TLS in front of
 reverse proxy). Per-user permissions, single sign-on and an audit trail are deliberately later; see
 [ROADMAP.md](ROADMAP.md).
 
+## In a cluster (Helm)
+
+`helm install la deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={shop}'` runs
+the server as a Deployment with a Service (port 8080). It always needs a token: the chart creates one in the
+Secret `la-token` (or use your own with `server.tokenSecret`). Read it with
+`kubectl get secret la-token -o jsonpath='{.data.token}' | base64 -d`. The server speaks plain http, so put
+TLS in front of it (your ingress) before anything outside the cluster talks to it. Inside the cluster the
+address is `http://la:8080`. `make helm-k3d` tests this on a throwaway cluster.
+
 ## Alertmanager
 
 Point a webhook at `/v1/alertmanager`. Each firing alert with a `namespace` label starts one

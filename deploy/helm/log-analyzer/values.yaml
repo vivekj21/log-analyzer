@@ -16,6 +16,15 @@ llm:
   allowInsecureHttp: false   # true only for a model server inside your own cluster reached over plain http
   apiKeySecret: ""      # name of the Secret holding the API key (falls back to gemini.existingSecret)
   apiKeySecretKey: ""   # the key's name inside that Secret (falls back to gemini.secretKey)
+server:                 # false = one-off Job (above). true = an always-on web service instead of the Job (docs/API.md)
+  enabled: false
+  namespaces: []        # namespaces it may investigate, e.g. [shop, payments]. Gets one read-only Role in each.
+                        # Required unless rbac.clusterWide=true (then empty = every namespace)
+  tokenSecret: ""       # name of a Secret with the key "token" (16+ characters). Empty = the chart makes <release>-token with a random token
+  port: 8080
+  queue: 5              # investigations that may wait behind the running one
+  timeout: 10m          # longest time one investigation may run
+  serviceType: ClusterIP   # TLS (https) is your ingress's job: the service speaks plain http inside the cluster
 investigation:
   namespace: default
   service: ""

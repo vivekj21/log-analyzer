@@ -10,6 +10,7 @@
 {{- if and (eq .Values.llm.mode "live") (ne .Values.llm.provider "gemini") (not .Values.llm.model) }}
 {{- fail "llm.model is required when llm.provider is openai or anthropic" }}
 {{- end }}
+{{- if not .Values.server.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -52,34 +53,7 @@ spec:
           env:
             - name: HOME
               value: /tmp
-            {{- if eq .Values.llm.mode "live" }}
-            - name: LLM_API_KEY_FILE
-              value: /var/run/secrets/gemini/key
-            - name: LLM_PROVIDER
-              value: {{ .Values.llm.provider | quote }}
-            {{- if .Values.llm.baseUrl }}
-            - name: LLM_BASE_URL
-              value: {{ .Values.llm.baseUrl | quote }}
-            {{- end }}
-            {{- if .Values.llm.allowInsecureHttp }}
-            - name: LLM_ALLOW_HTTP
-              value: "true"
-            {{- end }}
-            {{- if .Values.llm.model }}
-            - name: LLM_MODEL
-              value: {{ .Values.llm.model | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.gemini.model }}
-            - name: GEMINI_MODEL
-              value: {{ .Values.gemini.model | quote }}
-            {{- end }}
-            - name: LOG_ANALYZER_MAX_CALLS
-              value: {{ .Values.limits.maxCalls | quote }}
-            - name: LOG_ANALYZER_MAX_TOKENS
-              value: {{ .Values.limits.maxTokensPerInvestigation | quote }}
-            - name: LOG_ANALYZER_MAX_TOTAL_TOKENS
-              value: {{ .Values.limits.maxTotalTokens | quote }}
+            {{- include "log-analyzer.modelEnv" . | trim | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -93,19 +67,11 @@ spec:
             - name: data
               mountPath: /data
             {{- if eq .Values.llm.mode "live" }}
-            - name: gemini-key
-              mountPath: /var/run/secrets/gemini
-              readOnly: true
+            {{- include "log-analyzer.keyMount" . | trim | nindent 12 }}
             {{- end }}
       volumes:
         {{- if eq .Values.llm.mode "live" }}
-        - name: gemini-key
-          secret:
-            secretName: {{ required "llm.apiKeySecret (or gemini.existingSecret) is required" (default .Values.gemini.existingSecret .Values.llm.apiKeySecret) }}
-            defaultMode: 0440
-            items:
-              - key: {{ default .Values.gemini.secretKey .Values.llm.apiKeySecretKey }}
-                path: key
+        {{- include "log-analyzer.keyVolume" . | trim | nindent 8 }}
         {{- end }}
         - name: tmp
           emptyDir: {}
@@ -116,3 +82,4 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+{{- end }}

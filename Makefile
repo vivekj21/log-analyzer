@@ -62,6 +62,9 @@ helm-lint:
 >   if echo "$$OUT" | grep -q "secretKeyRef"; then echo "FAIL: the key must not be passed as an environment variable"; exit 1; fi; \
 >   if helm template t deploy/helm/log-analyzer --set llm.mode=live --set llm.provider=openai --set gemini.existingSecret=x --set llm.acknowledgeDataLeavesCluster=true >/dev/null 2>&1; then echo "FAIL: openai without llm.model was accepted"; exit 1; fi; \
 >   helm template t deploy/helm/log-analyzer --set llm.mode=live --set llm.provider=openai --set llm.model=m --set llm.baseUrl=https://api.groq.com/openai/v1 --set llm.apiKeySecret=k --set llm.acknowledgeDataLeavesCluster=true | grep -q "LLM_BASE_URL" || { echo "FAIL: openai settings did not reach the pod"; exit 1; }; \
+>   if helm template t deploy/helm/log-analyzer --set server.enabled=true >/dev/null 2>&1; then echo "FAIL: the web service rendered without server.namespaces"; exit 1; fi; \
+>   helm template t deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={shop}' >/dev/null || { echo "FAIL: the web service should render"; exit 1; }; \
+>   helm lint deploy/helm/log-analyzer --set server.enabled=true --set 'server.namespaces={shop}' >/dev/null || { echo "FAIL: helm lint of the web service"; exit 1; }; \
 >   echo "helm-lint: live mode needs acknowledgement and mounts the key as a file; heuristic is the default"; fi
 
 hooks:
